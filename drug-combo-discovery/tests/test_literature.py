@@ -136,6 +136,118 @@ class TestLiteratureRAG(unittest.TestCase):
         snippet = _extract_best_snippet(abstract, ["Carmustine", "Procarbazine", "glioblastoma"])
         self.assertIn("Carmustine and Procarbazine", snippet)
 
+    @patch("literature._esearch")
+    @patch("literature._efetch_xml")
+    def test_query_excludes_unrelated_subgraph_diseases(self, mock_efetch, mock_esearch):
+        """
+        Verify building a query with subgraph diseases [glioblastoma, breast carcinoma, pyoureter]
+        and user disease glioblastoma MUST NOT include breast carcinoma or pyoureter.
+        """
+        mock_esearch.return_value = ["11111111"]
+        mock_efetch.return_value = [{
+            "pmid": "11111111",
+            "title": "Study of Temozolomide and Cyclophosphamide in glioblastoma",
+            "year": "2022",
+            "journal": "Neuro-Oncology",
+            "first_author": "Clark D",
+            "abstract": "We evaluated Temozolomide and Cyclophosphamide combination in glioblastoma models.",
+            "url": "https://pubmed.ncbi.nlm.nih.gov/11111111/",
+        }]
+
+        subgraph_edges = [
+            {"source": "glioblastoma", "source_type": "disease", "target": "Temozolomide", "target_type": "drug", "relation": "indication"},
+            {"source": "breast carcinoma", "source_type": "disease", "target": "Cyclophosphamide", "target_type": "drug", "relation": "indication"},
+            {"source": "pyoureter", "source_type": "disease", "target": "Cyclophosphamide", "target_type": "drug", "relation": "contraindication"},
+        ]
+
+        result = retrieve_literature_rag(
+            drug_a_name="Temozolomide",
+            drug_b_name="Cyclophosphamide",
+            disease_context="glioblastoma",
+            top_edges=subgraph_edges,
+            explanation_text="Temozolomide and Cyclophosphamide co-treatment.",
+            max_citations=1,
+        )
+
+        query_used = result["query_used"].lower()
+        self.assertNotIn("breast carcinoma", query_used)
+        self.assertNotIn("pyoureter", query_used)
+        self.assertIn("glioblastoma", query_used)
+        self.assertIn("temozolomide", query_used)
+        self.assertIn("cyclophosphamide", query_used)
+
+    @patch("literature._esearch")
+    @patch("literature._efetch_xml")
+    def test_mocked_abstract_one_drug_not_combination(self, mock_efetch, mock_esearch):
+        """
+        Verify a mocked abstract that contains cyclophosphamide but not temozolomide
+        MUST NOT get evidence_type combination (must be single_drug).
+        """
+        mock_esearch.return_value = ["22222222"]
+        mock_efetch.return_value = [{
+            "pmid": "22222222",
+            "title": "Adjuvant alternating electric fields with chemotherapy in cancer cell lines",
+            "year": "2009",
+            "journal": "BMC Medical Physics",
+            "first_author": "Kirson ED",
+            "abstract": (
+                "Cell proliferation was studied in breast carcinoma and glioma cell lines exposed to TTFields, "
+                "paclitaxel, doxorubicin, and cyclophosphamide separately and in combinations."
+            ),
+            "url": "https://pubmed.ncbi.nlm.nih.gov/22222222/",
+        }]
+
+        result = retrieve_literature_rag(
+            drug_a_name="Temozolomide",
+            drug_b_name="Cyclophosphamide",
+            disease_context="glioblastoma",
+            top_edges=[],
+            max_citations=1,
+        )
+
+        self.assertEqual(len(result["citations"]), 1)
+        cite = result["citations"][0]
+        # Must NOT be combination because temozolomide does not appear in abstract or title
+        self.assertNotEqual(cite["evidence_type"], "combination")
+        self.assertEqual(cite["evidence_type"], "single_drug")
+        self.assertIn("Single-drug support", cite["match_reason"])
+        self.assertNotIn("both Temozolomide and Cyclophosphamide", cite["match_reason"])
+
+    @patch("literature._esearch")
+    @patch("literature._efetch_xml")
+    def test_mocked_abstract_both_drugs_gets_combination(self, mock_efetch, mock_esearch):
+        """
+        Verify a mocked abstract containing both procarbazine and carmustine MAY get combination.
+        """
+        mock_esearch.return_value = ["33333333"]
+        mock_efetch.return_value = [{
+            "pmid": "33333333",
+            "title": "Combination of Procarbazine, Carmustine, and Vincristine in recurrent glioblastoma",
+            "year": "2012",
+            "journal": "Journal of Neuro-Oncology",
+            "first_author": "Kuhnhenn J",
+            "abstract": (
+                "In this observational study we recorded the efficacy and toxicity of a combination of "
+                "procarbazine, carmustine, and vincristine (PBV) for 69 patients with recurrent glioblastoma."
+            ),
+            "url": "https://pubmed.ncbi.nlm.nih.gov/33333333/",
+        }]
+
+        result = retrieve_literature_rag(
+            drug_a_name="Procarbazine",
+            drug_b_name="Carmustine",
+            disease_context="glioblastoma",
+            top_edges=[],
+            max_citations=1,
+        )
+
+        self.assertEqual(len(result["citations"]), 1)
+        cite = result["citations"][0]
+        self.assertEqual(cite["evidence_type"], "combination")
+        self.assertIn("Combination evidence", cite["match_reason"])
+        self.assertIn("both Procarbazine and Carmustine", cite["match_reason"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

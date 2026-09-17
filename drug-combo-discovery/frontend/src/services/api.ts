@@ -142,6 +142,9 @@ export async function searchCombinations(
     top_k: request.top_k ?? 5,
     search_method: request.search_method ?? 'beam',
     beam_width: request.beam_width ?? 5,
+    n_simulations: request.n_simulations ?? 50,
+    mcts_c: request.mcts_c ?? 1.414,
+    time_budget_sec: request.time_budget_sec ?? 15.0,
     inspect_top_k: request.inspect_top_k ?? 0,
   };
   return fetchJson<SearchResponse>(`${API_BASE}/search`, {

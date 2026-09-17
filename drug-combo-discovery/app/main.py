@@ -190,8 +190,11 @@ class SearchRequest(BaseModel):
     cell_line: str = Field(..., description="Target cell line name (e.g. 'T98G')")
     max_candidates: int = Field(20, description="Maximum candidate drugs to discover from PrimeKG")
     top_k: int = Field(5, description="Number of top-scoring candidate pairs to return")
-    search_method: str = Field("beam", description="Search strategy: 'beam' (preferred) or 'greedy'")
+    search_method: str = Field("beam", description="Search strategy: 'beam' (default), 'greedy', or 'mcts'. Beam expands top-B anchors greedily; MCTS uses Upper Confidence bounds applied to Trees (UCT) to balance exploration and exploitation across candidate combinations.")
     beam_width: int = Field(5, description="Beam width B for state-space expansion (used when search_method='beam')")
+    n_simulations: int = Field(50, description="Number of MCTS simulations/rollouts to run (used when search_method='mcts')")
+    mcts_c: float = Field(1.414, description="UCT exploration constant balancing exploitation of high-scoring pairs vs exploration of unvisited branches (used when search_method='mcts')")
+    time_budget_sec: float = Field(15.0, description="Hard wall-clock timeout in seconds for MCTS search (returns best pairs found so far if reached)")
     inspect_top_k: int = Field(0, description="Optional number of top hits (0-3) to run in-silico faithfulness ablation on")
 
     model_config = {
@@ -203,6 +206,9 @@ class SearchRequest(BaseModel):
                 "top_k": 5,
                 "search_method": "beam",
                 "beam_width": 5,
+                "n_simulations": 50,
+                "mcts_c": 1.414,
+                "time_budget_sec": 15.0,
                 "inspect_top_k": 0,
             }
         }
@@ -342,8 +348,17 @@ def predict(request: PredictRequest) -> Dict[str, Any]:
 def search_combinations(request: SearchRequest) -> Dict[str, Any]:
     """
     Given a target disease name and cell line context, discover candidate drugs via PrimeKG,
-    score all unique candidate pairs using the trained Synergy GNN model, rank them by evidence
-    tier and synergy probability, and generate full biologically grounded explanations for the top-K.
+    score candidate pairs using the trained Synergy GNN model, and generate biologically grounded
+    explanations for top hits.
+
+    MCTS vs. Beam Search:
+    Beam Search expands a fixed width of top-B candidate anchor drugs deterministically and
+    greedily scores their partner space in batched passes. In contrast, Monte Carlo Tree Search
+    (MCTS) models combination discovery as a sequential decision tree (Depth 0: root -> Depth 1:
+    choose drug A -> Depth 2: choose partner drug B != A). MCTS utilizes Upper Confidence bounds
+    applied to Trees (UCT) with exploration constant c to dynamically balance exploiting known
+    high-synergy drug clusters against exploring under-sampled candidate drugs, evaluating terminal
+    pairs directly with the trained SynergyGNN value function while caching pair evaluations.
     """
     disease_raw = request.disease.strip()
     cell_line_raw = request.cell_line.strip()
@@ -370,7 +385,7 @@ def search_combinations(request: SearchRequest) -> Dict[str, Any]:
             detail=f"Disease '{disease_raw}' could not be resolved to any node in PrimeKG knowledge graph. Please verify the disease name.",
         )
 
-    # 3. Score Candidate Pairs using Beam/Greedy Search
+    # 3. Score Candidate Pairs using Beam/Greedy/MCTS Search
     try:
         top_pairs, search_meta = beam_search_combinations(
             disease_name=disease_raw,
@@ -382,6 +397,9 @@ def search_combinations(request: SearchRequest) -> Dict[str, Any]:
             beam_width=request.beam_width,
             top_k=request.top_k,
             search_method=request.search_method,
+            n_simulations=request.n_simulations,
+            mcts_c=request.mcts_c,
+            time_budget_sec=request.time_budget_sec,
         )
     except Exception as e:
         raise HTTPException(
@@ -412,6 +430,9 @@ def search_combinations(request: SearchRequest) -> Dict[str, Any]:
         "beam_width": search_meta.get("beam_width", request.beam_width),
         "candidate_pool_size": search_meta.get("candidate_pool_size", len(candidates)),
         "max_candidates_scored": search_meta.get("max_candidates_scored", len(top_pairs)),
+        "n_simulations": search_meta.get("n_simulations"),
+        "n_pairs_scored": search_meta.get("n_pairs_scored"),
+        "truncated": search_meta.get("truncated", False),
         "results": explanations,
     }
 

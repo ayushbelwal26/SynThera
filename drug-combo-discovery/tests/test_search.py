@@ -366,6 +366,83 @@ class TestCandidateSearchAndScoring(unittest.TestCase):
         self.assertGreaterEqual(len(top_pairs), 1)
         self.assertTrue(any(p["drug_a"] == "DB00515" or p["drug_b"] == "DB00515" for p in top_pairs))
 
+    def test_mcts_search_combinations(self):
+        """Test MCTS combination search: metadata, faithfulness null, no zinc, ranking, and budget caching."""
+        top_pairs, search_meta = beam_search_combinations(
+            disease_name="glioblastoma",
+            cell_line_name="T98G",
+            heterodata=self.heterodata,
+            module=self.module,
+            device=self.device,
+            max_candidate_drugs=8,
+            top_k=3,
+            search_method="mcts",
+            n_simulations=30,
+            mcts_c=1.414,
+            time_budget_sec=15.0,
+        )
+
+        self.assertEqual(len(top_pairs), 3)
+        self.assertEqual(search_meta["search_method"], "mcts")
+        self.assertLessEqual(search_meta["n_simulations"], 30)
+        self.assertLessEqual(search_meta["n_pairs_scored"], search_meta["n_simulations"])
+        self.assertGreaterEqual(search_meta["cache_hits"], 0)
+        self.assertIn("truncated", search_meta)
+
+        for p in top_pairs:
+            self.assertEqual(p["search_method"], "mcts")
+            self.assertIsNone(p["faithfulness"])
+            self.assertIn("mcts_visits", p)
+            self.assertGreaterEqual(p["mcts_visits"], 1)
+            # Zinc absent
+            self.assertNotIn(p["drug_a"], {"DB14533", "DB01593"})
+            self.assertNotIn(p["drug_b"], {"DB14533", "DB01593"})
+            self.assertNotIn("zinc", p["drug_a_name"].lower())
+            self.assertNotIn("zinc", p["drug_b_name"].lower())
+
+        # Strictly sorted by p_synergy descending
+        for i in range(len(top_pairs) - 1):
+            self.assertGreaterEqual(
+                top_pairs[i]["p_synergy"],
+                top_pairs[i + 1]["p_synergy"] - 1e-6,
+                f"MCTS Rank {i+1} score {top_pairs[i]['p_synergy']} should be >= Rank {i+2} score {top_pairs[i+1]['p_synergy']}"
+            )
+
+        # Confirm full explanation retains faithfulness null and passes mcts_visits
+        explanations = get_full_explanations_for_top_k(
+            top_k_pairs=top_pairs,
+            cell_line_name="T98G",
+            module=self.module,
+            heterodata=self.heterodata,
+            device=self.device,
+            inspect_top_k=0,
+        )
+        self.assertEqual(len(explanations), 3)
+        for expl in explanations:
+            self.assertIsNone(expl.get("faithfulness"))
+            self.assertIsNone(expl.get("literature"))
+            self.assertEqual(expl.get("search_method"), "mcts")
+            self.assertIn("mcts_visits", expl)
+
+    def test_mcts_diverse_first_drugs(self):
+        """Test that UCT exploration allows MCTS to return combinations with more than one distinct anchor drug."""
+        top_pairs, _ = beam_search_combinations(
+            disease_name="glioblastoma",
+            cell_line_name="T98G",
+            heterodata=self.heterodata,
+            module=self.module,
+            device=self.device,
+            max_candidate_drugs=10,
+            top_k=4,
+            search_method="mcts",
+            n_simulations=35,
+            mcts_c=1.414,
+            time_budget_sec=15.0,
+        )
+        first_drugs = {p["drug_a"] for p in top_pairs}
+        # In glioblastoma with UCT c=1.414, top 4 hits span multiple distinct anchor drugs
+        self.assertGreater(len(first_drugs), 1, f"Expected >1 distinct first drug in top-4 MCTS hits, got {first_drugs}")
+
 
 if __name__ == "__main__":
     unittest.main()

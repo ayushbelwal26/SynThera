@@ -115,18 +115,42 @@ export const LiteratureSection: React.FC<LiteratureSectionProps> = ({
                     </p>
                   )}
 
-                  {cite.match_reason && (
-                    <div className="mb-2.5">
-                      <span className={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded font-semibold ${
+                  <div className="flex flex-col gap-1.5 mb-2.5">
+                    {/* Evidence Type Badge */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`inline-flex items-center gap-1 text-[9px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
                         cite.evidence_type === 'combination'
-                          ? 'bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0]'
-                          : 'bg-[#F1F5F9] text-[#334155] border border-[#CBD5E1]'
+                          ? 'bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]'
+                          : cite.evidence_type === 'single_drug'
+                          ? 'bg-[#EFF6FF] text-[#1E40AF] border-[#BFDBFE]'
+                          : 'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]'
                       }`}>
-                        <Sparkles className="w-2.5 h-2.5" />
-                        {cite.match_reason}
+                        {cite.evidence_type === 'combination' ? (
+                          <>
+                            <Sparkles className="w-2.5 h-2.5 text-[#059669]" />
+                            Combination Evidence
+                          </>
+                        ) : cite.evidence_type === 'single_drug' ? (
+                          <>
+                            <FileText className="w-2.5 h-2.5 text-[#2563EB]" />
+                            Single-Drug Support
+                          </>
+                        ) : (
+                          <>
+                            <BookOpen className="w-2.5 h-2.5 text-[#D97706]" />
+                            Related Context
+                          </>
+                        )}
                       </span>
                     </div>
-                  )}
+
+                    {/* Detailed Match Reason */}
+                    {cite.match_reason && (
+                      <p className="text-[11px] font-mono text-[#475569] leading-snug">
+                        {cite.match_reason}
+                      </p>
+                    )}
+                  </div>
 
                   {cite.snippet && (
                     <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded p-2.5 mb-3 text-xs text-[#334155] leading-relaxed italic">

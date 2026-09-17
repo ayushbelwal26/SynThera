@@ -89,7 +89,10 @@ export const DiscoverPage: React.FC = () => {
     disease: string,
     targetCellLine: string,
     maxCandidates: number,
-    topK: number
+    topK: number,
+    searchMethod: 'beam' | 'greedy' | 'mcts' = 'beam',
+    nSimulations: number = 50,
+    mctsC: number = 1.414
   ) => {
     setIsLoading(true);
     setErrorMsg(null);
@@ -101,6 +104,9 @@ export const DiscoverPage: React.FC = () => {
         cell_line: targetCellLine,
         max_candidates: maxCandidates,
         top_k: topK,
+        search_method: searchMethod,
+        n_simulations: nSimulations,
+        mcts_c: mctsC,
       });
       setSearchResults(res);
     } catch (err: any) {
@@ -345,9 +351,16 @@ export const DiscoverPage: React.FC = () => {
                 <div className="flex items-center gap-2 flex-wrap">
                   {searchResults.search_method && (
                     <span className="text-xs font-mono text-[#0D9488] bg-[#F0FDFA] border border-[#99F6E4] px-2.5 py-1 rounded font-semibold">
-                      {searchResults.search_method === 'beam'
+                      {searchResults.search_method === 'mcts'
+                        ? `MCTS (${searchResults.n_simulations ?? 50} simulations, ${searchResults.n_pairs_scored ?? searchResults.max_candidates_scored ?? searchResults.results.length} pairs scored)`
+                        : searchResults.search_method === 'beam'
                         ? `Beam search (width=${searchResults.beam_width ?? 5}, pool=${searchResults.candidate_pool_size}, scored=${searchResults.max_candidates_scored ?? searchResults.results.length})`
                         : `Greedy search (pool=${searchResults.candidate_pool_size}, scored=${searchResults.max_candidates_scored ?? searchResults.results.length})`}
+                    </span>
+                  )}
+                  {searchResults.truncated && (
+                    <span className="text-xs font-mono text-[#B45309] bg-[#FFFBEB] border border-[#FDE68A] px-2.5 py-1 rounded font-semibold flex items-center gap-1">
+                      <span>⚠️</span> Time budget reached (truncated)
                     </span>
                   )}
                   <span className="text-xs font-mono text-[#475569] bg-[#F1F5F9] border border-[#E2E8F0] px-2.5 py-1 rounded font-semibold">
@@ -363,7 +376,7 @@ export const DiscoverPage: React.FC = () => {
                     className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-[#F8FAFC] px-3 rounded transition-colors"
                   >
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs text-[#94A3B8] font-bold">
                           #{pair.rank ?? idx + 1}
                         </span>
@@ -382,6 +395,11 @@ export const DiscoverPage: React.FC = () => {
                         >
                           {pair.predicted_class}
                         </Badge>
+                        {pair.mcts_visits !== undefined && (
+                          <span className="text-[11px] font-mono text-[#0D9488] bg-[#F0FDFA] border border-[#CCFBF1] px-1.5 py-0.5 rounded font-medium">
+                            Visits: {pair.mcts_visits}
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-[#475569] line-clamp-2 max-w-2xl leading-relaxed">
                         {pair.explanation_text}

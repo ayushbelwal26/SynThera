@@ -87,6 +87,7 @@ export interface PredictionResult {
   
   rank?: number;
   search_method?: string;
+  mcts_visits?: number;
   evidence_tier?: string;
   direct_disease_target?: boolean;
 
@@ -106,8 +107,11 @@ export interface SearchRequest {
   cell_line: string;
   max_candidates?: number;
   top_k?: number;
-  search_method?: 'beam' | 'greedy';
+  search_method?: 'beam' | 'greedy' | 'mcts';
   beam_width?: number;
+  n_simulations?: number;
+  mcts_c?: number;
+  time_budget_sec?: number;
   inspect_top_k?: number;
 }
 
@@ -118,6 +122,9 @@ export interface SearchResponse {
   beam_width?: number;
   candidate_pool_size: number;
   max_candidates_scored?: number;
+  n_simulations?: number;
+  n_pairs_scored?: number;
+  truncated?: boolean;
   results: PredictionResult[];
 }
 

@@ -16,6 +16,7 @@ import os
 import sys
 import re
 import time
+import math
 import logging
 import argparse
 from collections import defaultdict
@@ -471,9 +472,311 @@ def find_candidate_drugs(
 
 
 # ---------------------------------------------------------------------------
+# Stage 2: Real GNN-Driven Combination Discovery (Beam, Greedy & MCTS)
 # ---------------------------------------------------------------------------
-# Stage 2: Real GNN-Driven Beam Search & Greedy Combination Discovery
-# ---------------------------------------------------------------------------
+
+def mcts_search_combinations(
+    disease_name: str,
+    cell_line_name: str,
+    heterodata: Optional[HeteroData] = None,
+    module: Optional[Any] = None,
+    device: Optional[str] = None,
+    max_candidate_drugs: int = 20,
+    n_simulations: int = 50,
+    mcts_c: float = 1.414,
+    time_budget_sec: float = 15.0,
+    top_k: int = 5,
+    seed_drug_id: Optional[str] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Search candidate drug combinations using Monte Carlo Tree Search (MCTS) with UCT
+    over depth-2 combination pairs, using the trained SynergyGNN as the terminal value function.
+
+    MCTS Formulation:
+    - Root (Depth 0): Uninitialized combination state.
+    - Depth 1: Selection of first drug d_a from filtered therapeutic candidate pool.
+    - Depth 2: Selection of partner drug d_b (d_b != d_a) from candidate pool.
+    - Terminal State: Candidate pair (d_a, d_b).
+    - Evaluation: Scored with trained SynergyGNN model (cached so each unique pair is scored at most once).
+    - Value Function: v = p_synergy in [0, 1].
+    - UCT Selection: Balances exploitation (average synergy score) and exploration (c * sqrt(ln(N_parent) / N_child)).
+    - Guardrails: Strict wall-clock timeout (time_budget_sec, default 15s) sets truncated=true if hit.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "src"))
+    from predict import THRESHOLD_SYNERGY, THRESHOLD_ANTAGONISM, _get_node_maps
+
+    # 1. Load resources & model
+    if module is None or heterodata is None:
+        module, heterodata, device = _load_model_cached(heterodata=heterodata, device=device)
+    elif device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    node_maps = _get_node_maps(heterodata)
+    drug_id2idx = node_maps.get("drug", {})
+    cell_line_map = heterodata.cell_line_map
+
+    # 2. Validate cell line strictly
+    if cell_line_name not in cell_line_map:
+        sample_cls = sorted(list(cell_line_map.keys()))[:8]
+        raise ValueError(
+            f"Cell line '{cell_line_name}' is not recognized in knowledge graph. "
+            f"Available cell lines include: {sample_cls} (total {len(cell_line_map)})."
+        )
+
+    cell_idx = cell_line_map[cell_line_name]
+
+    # 3. Candidate Generation (with non-drug and CYP filtering)
+    candidates = find_candidate_drugs(
+        disease_name,
+        heterodata=heterodata,
+        node_maps=node_maps,
+        max_candidates=max_candidate_drugs,
+    )
+    candidates = [
+        c for c in candidates
+        if is_valid_therapeutic_candidate(c["drug_name"], c["drug_id"])
+    ]
+
+    if seed_drug_id and seed_drug_id in drug_id2idx:
+        existing_ids = {c["drug_id"] for c in candidates}
+        if seed_drug_id not in existing_ids:
+            from explain import _build_name_lookups
+            name_lookup, _ = _build_name_lookups(heterodata)
+            seed_name = name_lookup.get("drug", {}).get(drug_id2idx[seed_drug_id], seed_drug_id)
+            candidates.insert(0, {
+                "drug_id": seed_drug_id,
+                "drug_name": seed_name,
+                "match_type": "seed",
+                "score": 1.0,
+                "shared_targets": 0,
+            })
+
+    if len(candidates) < 2:
+        logger.warning(
+            f"Fewer than 2 candidate drugs ({len(candidates)}) found for disease '{disease_name}'. Cannot form pairs."
+        )
+        return [], {
+            "search_method": "mcts",
+            "n_simulations": 0,
+            "n_pairs_scored": 0,
+            "candidate_pool_size": len(candidates),
+            "truncated": False,
+            "mcts_c": mcts_c,
+            "cache_hits": 0,
+            "max_candidates_scored": 0,
+        }
+
+    # Deterministic seeding for reproducibility
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+
+    cand_ids = [c["drug_id"] for c in candidates]
+    cand_by_id = {c["drug_id"]: c for c in candidates}
+
+    # Internal pair evaluation cache and visit tracker
+    pair_cache: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    pair_visits: Dict[Tuple[str, str], int] = {}
+    cache_hits = 0
+    n_pairs_scored = 0
+
+    def score_single_pair(d_a: str, d_b: str) -> Dict[str, Any]:
+        nonlocal n_pairs_scored
+        a_idx = drug_id2idx[d_a]
+        b_idx = drug_id2idx[d_b]
+        data_work = heterodata.clone()
+        edge_index = torch.tensor([[a_idx], [b_idx]], dtype=torch.long)
+        dummy_label = torch.tensor([[0, cell_idx]], dtype=torch.long)
+
+        data_work["drug", "synergy_pair", "drug"].edge_index = edge_index
+        data_work["drug", "synergy_pair", "drug"].edge_label_index = edge_index
+        data_work["drug", "synergy_pair", "drug"].edge_label = dummy_label
+
+        num_neighbors = {
+            et: ([0, 0] if et == ("drug", "synergy_pair", "drug") else [5, 3])
+            for et in data_work.edge_types
+        }
+        loader = LinkNeighborLoader(
+            data=data_work,
+            num_neighbors=num_neighbors,
+            edge_label_index=(("drug", "synergy_pair", "drug"), edge_index),
+            edge_label=dummy_label,
+            batch_size=1,
+            shuffle=False,
+        )
+        module.eval()
+        with torch.no_grad():
+            batch = next(iter(loader)).to(device)
+            logits, _ = module(batch)
+            probs = F.softmax(logits, dim=-1)[0].tolist()
+
+        n_pairs_scored += 1
+        p_ant, p_add, p_syn = probs
+        if p_syn > THRESHOLD_SYNERGY:
+            pred = "synergy"
+        elif p_ant > THRESHOLD_ANTAGONISM:
+            pred = "antagonism"
+        else:
+            pred = "additive"
+
+        return {
+            "p_antagonism": p_ant,
+            "p_additive": p_add,
+            "p_synergy": p_syn,
+            "predicted_class": pred,
+        }
+
+    class MCTSNode:
+        def __init__(self, drug_id: Optional[str] = None, parent: Optional['MCTSNode'] = None, depth: int = 0):
+            self.drug_id = drug_id
+            self.parent = parent
+            self.depth = depth
+            self.children: Dict[str, 'MCTSNode'] = {}
+            self.visits: int = 0
+            self.total_value: float = 0.0
+
+        @property
+        def q_value(self) -> float:
+            return self.total_value / self.visits if self.visits > 0 else 0.0
+
+    root = MCTSNode(depth=0)
+    start_time = time.time()
+    truncated = False
+    sims_completed = 0
+
+    for sim_idx in range(n_simulations):
+        if time.time() - start_time >= time_budget_sec:
+            truncated = True
+            logger.warning(
+                f"[MCTS] Wall-clock time budget ({time_budget_sec}s) reached after {sim_idx} simulations. "
+                "Truncating search."
+            )
+            break
+
+        # 1. Selection & Expansion
+        curr = root
+        # Depth 0: Choose first drug d_a
+        unvisited_roots = [d for d in cand_ids if d not in curr.children]
+        if unvisited_roots:
+            # Deterministic selection in candidate priority order
+            pick_d = unvisited_roots[0]
+            child = MCTSNode(drug_id=pick_d, parent=curr, depth=1)
+            curr.children[pick_d] = child
+            curr = child
+        else:
+            log_n = math.log(max(curr.visits, 1))
+            best_uct = -1e9
+            best_child = None
+            for d in cand_ids:
+                ch = curr.children[d]
+                uct = ch.q_value + mcts_c * math.sqrt(log_n / max(ch.visits, 1))
+                if uct > best_uct or (uct == best_uct and (best_child is None or d < best_child.drug_id)):
+                    best_uct = uct
+                    best_child = ch
+            curr = best_child
+
+        # Depth 1: Choose partner drug d_b (d_b != d_a)
+        d_a = curr.drug_id
+        partner_cands = [d for d in cand_ids if d != d_a]
+        unvisited_partners = [d for d in partner_cands if d not in curr.children]
+        if unvisited_partners:
+            pick_p = unvisited_partners[0]
+            child = MCTSNode(drug_id=pick_p, parent=curr, depth=2)
+            curr.children[pick_p] = child
+            curr = child
+        else:
+            log_n = math.log(max(curr.visits, 1))
+            best_uct = -1e9
+            best_child = None
+            for p in partner_cands:
+                ch = curr.children[p]
+                uct = ch.q_value + mcts_c * math.sqrt(log_n / max(ch.visits, 1))
+                if uct > best_uct or (uct == best_uct and (best_child is None or p < best_child.drug_id)):
+                    best_uct = uct
+                    best_child = ch
+            curr = best_child
+
+        # 2. Simulation (Terminal State Evaluation at Depth 2)
+        d_b = curr.drug_id
+        pair_key = (min(d_a, d_b), max(d_a, d_b))
+        pair_visits[pair_key] = pair_visits.get(pair_key, 0) + 1
+
+        if pair_key in pair_cache:
+            eval_res = pair_cache[pair_key]
+            cache_hits += 1
+        else:
+            eval_res = score_single_pair(d_a, d_b)
+            pair_cache[pair_key] = eval_res
+
+        v = eval_res["p_synergy"]
+
+        # 3. Backpropagation
+        node = curr
+        while node is not None:
+            node.visits += 1
+            node.total_value += v
+            node = node.parent
+
+        sims_completed += 1
+
+    elapsed = time.time() - start_time
+    logger.info(
+        f"[MCTS SEARCH] Completed {sims_completed} simulations ({n_pairs_scored} unique pairs scored, "
+        f"{cache_hits} cache hits, truncated={truncated}) in {elapsed:.2f}s."
+    )
+
+    metadata = {
+        "search_method": "mcts",
+        "n_simulations": sims_completed,
+        "n_pairs_scored": n_pairs_scored,
+        "candidate_pool_size": len(candidates),
+        "truncated": truncated,
+        "mcts_c": mcts_c,
+        "cache_hits": cache_hits,
+        "max_candidates_scored": n_pairs_scored,
+    }
+
+    # 4. Compile and rank candidates strictly by GNN score
+    scored_pairs: List[Dict[str, Any]] = []
+    for pair_key, eval_res in pair_cache.items():
+        da_id, db_id = pair_key
+        ca = cand_by_id[da_id]
+        cb = cand_by_id[db_id]
+        p_syn = eval_res["p_synergy"]
+        p_add = eval_res["p_additive"]
+        p_ant = eval_res["p_antagonism"]
+
+        is_speculative = (ca["match_type"] == "target_overlap" or cb["match_type"] == "target_overlap")
+        high_confidence_caveat = bool(p_syn > _HIGH_CONFIDENCE_THRESHOLD and is_speculative)
+
+        scored_pairs.append({
+            "drug_a": da_id,
+            "drug_a_name": ca["drug_name"],
+            "drug_b": db_id,
+            "drug_b_name": cb["drug_name"],
+            "drug_a_match_type": ca["match_type"],
+            "drug_b_match_type": cb["match_type"],
+            "score": round(p_syn, 4),
+            "p_synergy": round(p_syn, 4),
+            "p_additive": round(p_add, 4),
+            "p_antagonism": round(p_ant, 4),
+            "predicted_class": eval_res["predicted_class"],
+            "cell_line": cell_line_name,
+            "search_method": "mcts",
+            "mcts_visits": pair_visits.get(pair_key, 1),
+            "high_confidence_caveat": high_confidence_caveat,
+            "faithfulness": None,
+        })
+
+    # Sort strictly by p_synergy descending, with stable tie-breaking on drug IDs
+    scored_pairs.sort(key=lambda x: (-x["p_synergy"], x["drug_a"], x["drug_b"]))
+
+    final_hits = scored_pairs[:top_k]
+    for i, hit in enumerate(final_hits, 1):
+        hit["rank"] = i
+
+    return final_hits, metadata
+
 
 def beam_search_combinations(
     disease_name: str,
@@ -486,10 +789,13 @@ def beam_search_combinations(
     top_k: int = 5,
     search_method: str = "beam",
     seed_drug_id: Optional[str] = None,
+    n_simulations: int = 50,
+    mcts_c: float = 1.414,
+    time_budget_sec: float = 15.0,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Search candidate drug combinations using a state-space Beam Search or Greedy Search
-    driven directly by the trained SynergyGNN pair scorer.
+    Search candidate drug combinations using a state-space Beam Search, Greedy Search,
+    or Monte Carlo Tree Search (MCTS) driven directly by the trained SynergyGNN pair scorer.
 
     State-Space Formulation (Depth 2 for 2-Drug Combinations):
     - Depth 1 (Anchor Selection):
@@ -507,6 +813,21 @@ def beam_search_combinations(
       Prunes the candidate pool to the top-K pairs ranked strictly by p_synergy descending,
       using stable tie-breaking on (drug_a, drug_b) IDs to guarantee reproducibility.
     """
+    if search_method.lower() == "mcts":
+        return mcts_search_combinations(
+            disease_name=disease_name,
+            cell_line_name=cell_line_name,
+            heterodata=heterodata,
+            module=module,
+            device=device,
+            max_candidate_drugs=max_candidate_drugs,
+            n_simulations=n_simulations,
+            mcts_c=mcts_c,
+            time_budget_sec=time_budget_sec,
+            top_k=top_k,
+            seed_drug_id=seed_drug_id,
+        )
+
     sys.path.insert(0, os.path.join(ROOT, "src"))
     from predict import THRESHOLD_SYNERGY, THRESHOLD_ANTAGONISM, _get_node_maps
 
@@ -723,6 +1044,9 @@ def score_candidate_pairs(
     top_k: int = 5,
     search_method: str = "beam",
     beam_width: int = 5,
+    n_simulations: int = 50,
+    mcts_c: float = 1.414,
+    time_budget_sec: float = 15.0,
 ) -> List[Dict[str, Any]]:
     """
     Backward-compatible wrapper around beam_search_combinations().
@@ -738,6 +1062,9 @@ def score_candidate_pairs(
         beam_width=beam_width,
         top_k=top_k,
         search_method=search_method,
+        n_simulations=n_simulations,
+        mcts_c=mcts_c,
+        time_budget_sec=time_budget_sec,
     )
     return pairs
 
@@ -815,6 +1142,18 @@ def get_full_explanations_for_top_k(
         print(f"    Completed in {expl_duration:.2f}s")
         expl["rank"] = pair.get("rank", idx)
         expl["search_method"] = pair.get("search_method", "beam")
+        if "score" in pair:
+            expl["score"] = pair["score"]
+        if "p_synergy" in pair:
+            expl["p_synergy"] = pair["p_synergy"]
+        if "p_additive" in pair:
+            expl["p_additive"] = pair["p_additive"]
+        if "p_antagonism" in pair:
+            expl["p_antagonism"] = pair["p_antagonism"]
+        if "predicted_class" in pair:
+            expl["predicted_class"] = pair["predicted_class"]
+        if "mcts_visits" in pair:
+            expl["mcts_visits"] = pair["mcts_visits"]
         if not should_inspect:
             expl["faithfulness"] = None
             expl["literature"] = None

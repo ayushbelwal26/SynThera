@@ -3,18 +3,21 @@ literature.py -- Retrieve-Then-Cite PubMed RAG via NCBI E-utilities
 ==================================================================
 
 Performs real PubMed literature retrieval for drug combination explanations:
-1. Multi-tier query builder: Combines drug names, disease context, and load-bearing
-   mechanism terms (genes, proteins, pathways) extracted from GNN explanation subgraphs.
-2. NCBI ESearch + EFetch: Retrieves real Medline records with abstracts.
-3. RAG Abstract Ranking & Extraction: Ranks returned papers by combination presence,
-   mechanism overlap, and extracts authentic 1-2 sentence snippets from the real abstract.
-4. Caching: Caches results by (drug_a, drug_b, disease, mechanism_terms) with TTL.
-5. Strict Truthfulness: Never invents PMIDs, titles, or snippets. Returns citations=[]
-   with clear reasons on zero hits or API failures.
-
-Rate limits:
-  - Without API key: ~3 requests/sec -> 0.34s delay between requests
-  - With API key:    ~10 requests/sec -> 0.11s delay between requests
+1. Mechanism Term Extraction: Strictly extracts gene/protein/pathway terms from the
+   cited subgraph. Excludes other diseases, phenotypes, and indications (e.g. pyoureter,
+   acute leukemia, breast carcinoma, cutaneous T-cell lymphoma) unless matching user disease_context.
+2. Multi-tier query builder:
+   - Tier 1: (drug_a AND drug_b) AND (user_disease OR gene/pathway terms) [capped at max 3 genes/pathways]
+   - Tier 2: (drug_a AND drug_b) [combination alone without extra diseases]
+   - Tier 3: single-drug + user_disease [explicitly single-drug evidence]
+3. NCBI ESearch + EFetch: Retrieves real Medline records with XML abstracts.
+4. Honest Combination & Single-Drug Detection:
+   - "combination": requires BOTH drug names/synonyms in title or abstract.
+   - "single_drug": exactly one of the two drugs in title or abstract.
+   - "weak" / "related": disease or pathway mentioned without both drugs.
+5. Abstract Ranking & Snippet Extraction: Prioritizes combination sentences from the
+   real abstract with zero hallucinations.
+6. In-memory caching by (drug_a, drug_b, disease, mechanism_terms) with TTL.
 """
 
 from __future__ import annotations
@@ -51,6 +54,33 @@ _SESSION.headers.update(
     {"User-Agent": "SynThera/1.0 (drug-combo-discovery; contact=synthera-demo)"}
 )
 
+# Common oncology drug aliases/synonyms for high-recall, exact token matching
+DRUG_SYNONYMS: Dict[str, List[str]] = {
+    "temozolomide": ["tmz", "temodar", "temodal"],
+    "carmustine": ["bcnu", "bicnu", "gliadel"],
+    "lomustine": ["ccnu", "ceenu", "gleostine"],
+    "cyclophosphamide": ["ctx", "cpm", "cytoxan", "endoxan", "neosar"],
+    "procarbazine": ["matulane", "natulan", "pcz"],
+    "vincristine": ["vcr", "oncovin", "vincasar"],
+    "cisplatin": ["cddp", "platinol"],
+    "carboplatin": ["cbdca", "paraplatin"],
+    "oxaliplatin": ["eloxatin", "l-ohp"],
+    "irinotecan": ["cpt-11", "camptosar", "cpt11"],
+    "topotecan": ["hycamtin"],
+    "doxorubicin": ["adriamycin", "dox"],
+    "paclitaxel": ["taxol"],
+    "docetaxel": ["taxotere"],
+    "bevacizumab": ["avastin"],
+}
+
+_DISEASE_KEYWORDS = {
+    "carcinoma", "lymphoma", "leukemia", "neoplasm", "tumor", "tumour",
+    "sarcoma", "glioma", "melanoma", "blastoma", "disease", "syndrome",
+    "disorder", "pyoureter", "edema", "pachymeningitis", "infection",
+    "dermatophytosis", "thrombocytopenia", "reticulosis", "fungoides",
+    "fibroblast", "metastasis", "cancer", "adenoma", "myeloma"
+}
+
 # ---------------------------------------------------------------------------
 # In-Memory Cache with TTL
 # ---------------------------------------------------------------------------
@@ -75,6 +105,206 @@ def _get_cached_literature(cache_key: Tuple[str, str, str, str]) -> Optional[Dic
 
 def _set_cached_literature(cache_key: Tuple[str, str, str, str], data: Dict[str, Any], is_success: bool) -> None:
     _LITERATURE_CACHE[cache_key] = (time.time(), dict(data), is_success)
+
+
+# ---------------------------------------------------------------------------
+# Biological Term Extraction & Query Normalization
+# ---------------------------------------------------------------------------
+
+def normalize_disease_name(disease: Optional[str]) -> str:
+    """Normalize disease string by stripping parentheticals, punctuation, and extra whitespace."""
+    if not disease:
+        return ""
+    # Strip parentheticals like "(CNS)", "(disease)", etc.
+    cleaned = re.sub(r"\s*\(.*?\)", "", disease).strip()
+    return cleaned.strip("\"' ")
+
+
+def _is_same_disease(candidate: str, user_disease: Optional[str]) -> bool:
+    """Check whether a candidate node string refers to the user's disease."""
+    if not candidate or not user_disease:
+        return False
+    c_norm = normalize_disease_name(candidate).lower()
+    u_norm = normalize_disease_name(user_disease).lower()
+    if not c_norm or not u_norm:
+        return False
+    if c_norm == u_norm:
+        return True
+    if u_norm in c_norm or c_norm in u_norm:
+        return True
+    return False
+
+
+def _is_disease_or_phenotype(node_name: str, node_type: Optional[str] = None) -> bool:
+    """
+    Return True if node is classified as disease, phenotype, or indication.
+    Used to prevent unrelated disease nodes from leaking into mechanism OR-terms.
+    """
+    if node_type:
+        nt = node_type.lower()
+        if "disease" in nt or "phenotype" in nt or "indication" in nt:
+            return True
+        if "gene" in nt or "protein" in nt or "pathway" in nt:
+            return False
+    # Fallback heuristic if node_type is unspecified
+    tokens = set(re.findall(r"\b\w+\b", node_name.lower()))
+    return bool(tokens & _DISEASE_KEYWORDS)
+
+
+def extract_mechanism_terms(
+    top_edges: Optional[List[dict]] = None,
+    explanation_text: Optional[str] = None,
+    drug_a: str = "",
+    drug_b: str = "",
+    disease_context: Optional[str] = None,
+    max_terms: int = 3,
+) -> List[str]:
+    """
+    Extract mechanism terms (genes, proteins, pathways) from the cited subgraph.
+    Strictly EXCLUDES other diseases, phenotypes, and indications unless the node
+    equals the user disease_context.
+    """
+    drug_a_l = drug_a.lower()
+    drug_b_l = drug_b.lower()
+    user_dis_norm = normalize_disease_name(disease_context).lower()
+
+    mechanism_terms: List[str] = []
+
+    def is_eligible_mechanism(node_name: str, node_type: Optional[str] = None) -> bool:
+        if not node_name or len(node_name.strip()) < 2:
+            return False
+        clean = node_name.strip()
+        clean_l = clean.lower()
+        if clean_l in (drug_a_l, drug_b_l) or clean_l.startswith("db"):
+            return False
+        # If it's a disease node:
+        if _is_disease_or_phenotype(clean, node_type):
+            # Only allowed if it equals the user's disease (and user disease is handled as user_disease)
+            return False
+        # If node_type explicitly specifies gene/protein or pathway, allow
+        if node_type:
+            nt = node_type.lower()
+            if "gene" in nt or "protein" in nt or "pathway" in nt:
+                return True
+            if "drug" in nt:
+                return False
+        # If node_type is not available, check it's not a generic word
+        if clean_l in ("and", "the", "for", "with", "not", "or", "cell", "human", "drug", "target"):
+            return False
+        return True
+
+    if top_edges:
+        for e in top_edges:
+            src = e.get("source", "")
+            src_type = e.get("source_type")
+            tgt = e.get("target", "")
+            tgt_type = e.get("target_type")
+
+            for node, ntype in ((src, src_type), (tgt, tgt_type)):
+                node_clean = node.strip()
+                if (
+                    is_eligible_mechanism(node_clean, ntype)
+                    and node_clean not in mechanism_terms
+                ):
+                    mechanism_terms.append(node_clean)
+                    if len(mechanism_terms) >= max_terms:
+                        return mechanism_terms
+
+    # Fallback to explanation text if no genes/pathways found in edges
+    if not mechanism_terms and explanation_text:
+        candidates = re.findall(r"\b[A-Z][A-Z0-9]{2,}\b", explanation_text)
+        skip_words = {"AND", "THE", "FOR", "NOT", "CNS", "GNN", "NLM", "USA", "ALL", "TOP", "DNA", "RNA"}
+        for c in candidates:
+            if (
+                c not in skip_words
+                and c.lower() not in (drug_a_l, drug_b_l, user_dis_norm)
+                and c not in mechanism_terms
+            ):
+                mechanism_terms.append(c)
+                if len(mechanism_terms) >= max_terms:
+                    break
+
+    return mechanism_terms
+
+
+def build_pubmed_queries(
+    drug_a: str,
+    drug_b: str,
+    disease_context: Optional[str] = None,
+    mechanism_terms: Optional[List[str]] = None,
+) -> Tuple[str, str, str, str]:
+    """
+    Build multi-tiered PubMed queries according to spec:
+    - Tier 1: (drug_a AND drug_b) AND (user_disease OR gene/pathway terms) [capped at max 3 terms]
+    - Tier 2: (drug_a AND drug_b) without extra diseases
+    - Tier 3: single-drug + user_disease
+    Returns (tier1_query, tier2_query, tier3_a_query, tier3_b_query).
+    """
+    drug_a_clean = drug_a.strip()
+    drug_b_clean = drug_b.strip()
+    norm_disease = normalize_disease_name(disease_context)
+
+    drug_a_q = f'"{drug_a_clean}"' if " " in drug_a_clean else drug_a_clean
+    drug_b_q = f'"{drug_b_clean}"' if " " in drug_b_clean else drug_b_clean
+
+    mechs = (mechanism_terms or [])[:3]
+
+    or_terms: List[str] = []
+    if norm_disease:
+        or_terms.append(f'"{norm_disease}"' if " " in norm_disease else norm_disease)
+    for m in mechs:
+        or_terms.append(f'"{m}"' if " " in m else m)
+
+    # Tier 1: (drug_a AND drug_b) AND (user_disease OR gene/pathway terms)
+    if or_terms:
+        tier1_query = f"({drug_a_q} AND {drug_b_q}) AND ({' OR '.join(or_terms)})"
+    else:
+        tier1_query = f"{drug_a_q} AND {drug_b_q}"
+
+    # Tier 2: (drug_a AND drug_b) without extra diseases
+    tier2_query = f"{drug_a_q} AND {drug_b_q}"
+
+    # Tier 3: single-drug + user_disease
+    if norm_disease:
+        dis_q = f'"{norm_disease}"' if " " in norm_disease else norm_disease
+        tier3_a_query = f"{drug_a_q} AND ({dis_q})"
+        tier3_b_query = f"{drug_b_q} AND ({dis_q})"
+    elif mechs:
+        mech_q = " OR ".join(f'"{m}"' if " " in m else m for m in mechs[:2])
+        tier3_a_query = f"{drug_a_q} AND ({mech_q})"
+        tier3_b_query = f"{drug_b_q} AND ({mech_q})"
+    else:
+        tier3_a_query = drug_a_q
+        tier3_b_query = drug_b_q
+
+    return tier1_query, tier2_query, tier3_a_query, tier3_b_query
+
+
+# ---------------------------------------------------------------------------
+# Drug Mentions & Evidence Verification
+# ---------------------------------------------------------------------------
+
+def _get_drug_patterns(drug_name: str) -> List[re.Pattern]:
+    """Get compiled regex word-boundary patterns for drug name and synonyms."""
+    d_clean = drug_name.strip()
+    if not d_clean:
+        return []
+    names = [d_clean]
+    names.extend(DRUG_SYNONYMS.get(d_clean.lower(), []))
+    patterns = []
+    for n in names:
+        if len(n) <= 2:
+            continue
+        patterns.append(re.compile(rf"\b{re.escape(n)}\b", re.IGNORECASE))
+    return patterns
+
+
+def check_drug_mentions(text: str, drug_name: str) -> bool:
+    """Return True if drug or its common synonyms appear as distinct word tokens in text."""
+    if not text or not drug_name:
+        return False
+    patterns = _get_drug_patterns(drug_name)
+    return any(p.search(text) for p in patterns)
 
 
 # ---------------------------------------------------------------------------
@@ -203,22 +433,46 @@ def _efetch_xml(pmids: List[str]) -> List[Dict[str, Any]]:
         return []
 
 
+def _esummary(pmids: List[str]) -> Dict[str, Any]:
+    """ESummary fallback for metadata when EFetch fails."""
+    if not pmids:
+        return {}
+    params = _ncbi_params({
+        "db": "pubmed",
+        "id": ",".join(pmids),
+    })
+    try:
+        time.sleep(_REQUEST_DELAY)
+        r = _SESSION.get(ESUMMARY_URL, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        return data.get("result", {})
+    except Exception as exc:
+        logger.warning(f"ESummary failed: {exc}")
+        return {}
+
+
 # ---------------------------------------------------------------------------
 # Snippet Extraction & RAG Ranking
 # ---------------------------------------------------------------------------
 
 def _split_into_sentences(text: str) -> List[str]:
-    """Split text into sentences using simple regex."""
+    """Split text into sentences using regex."""
     if not text:
         return []
     sentences = re.split(r"(?<=[.!?])\s+", text)
     return [s.strip() for s in sentences if len(s.strip()) > 15]
 
 
-def _extract_best_snippet(abstract: str, query_terms: List[str]) -> str:
+def _extract_best_snippet(
+    abstract: str,
+    all_terms: List[str],
+    drug_a: str = "",
+    drug_b: str = "",
+) -> str:
     """
-    Extract 1-2 sentences from the real abstract that have the highest overlap
-    with the target drug and mechanism terms.
+    Extract 1-2 sentences from the real abstract that have the highest overlap.
+    Sentences mentioning both drugs are heavily prioritized.
     """
     if not abstract:
         return "Abstract text not provided in the MEDLINE indexing record."
@@ -227,22 +481,32 @@ def _extract_best_snippet(abstract: str, query_terms: List[str]) -> str:
     if not sentences:
         return abstract[:250] + ("..." if len(abstract) > 250 else "")
 
-    term_patterns = [re.compile(rf"\b{re.escape(t)}\b", re.IGNORECASE) for t in query_terms if len(t) >= 3]
+    pats_a = _get_drug_patterns(drug_a) if drug_a else []
+    pats_b = _get_drug_patterns(drug_b) if drug_b else []
+    other_pats = [re.compile(rf"\b{re.escape(t)}\b", re.IGNORECASE) for t in all_terms if len(t) >= 3]
 
-    def score_sentence(s: str) -> int:
-        return sum(1 for p in term_patterns if p.search(s))
+    def score_sentence(s: str) -> float:
+        score = 0.0
+        has_a = any(p.search(s) for p in pats_a)
+        has_b = any(p.search(s) for p in pats_b)
+        if has_a and has_b:
+            score += 10.0
+        elif has_a or has_b:
+            score += 3.0
+        for p in other_pats:
+            if p.search(s):
+                score += 1.0
+        return score
 
     scored = [(score_sentence(s), idx, s) for idx, s in enumerate(sentences)]
     scored.sort(key=lambda x: (x[0], -x[1]), reverse=True)
 
     best_match_score, best_idx, best_sent = scored[0]
     if best_match_score > 0:
-        # Include next sentence if available for context
         if best_idx + 1 < len(sentences) and len(best_sent) < 180:
             return f"{best_sent} {sentences[best_idx + 1]}"
         return best_sent
 
-    # Fallback to concluding or introductory sentence
     if len(sentences) > 1 and len(sentences[-1]) > 30:
         return sentences[-1]
     return sentences[0]
@@ -258,47 +522,51 @@ def _rank_and_format_citations(
 ) -> List[Dict[str, Any]]:
     """
     Rank candidate articles and label match reason based on evidence type:
-    - Combination evidence: mentions BOTH drugs.
-    - Single-drug evidence: mentions drug_a OR drug_b along with mechanism/disease.
+    - combination: requires BOTH drugs in title or abstract.
+    - single_drug: exactly one of the two drugs in title or abstract.
+    - weak / related: disease or related context, but neither drug directly.
     """
-    drug_a_pat = re.compile(rf"\b{re.escape(drug_a)}\b", re.IGNORECASE)
-    drug_b_pat = re.compile(rf"\b{re.escape(drug_b)}\b", re.IGNORECASE)
-    dis_pat = re.compile(rf"\b{re.escape(disease)}\b", re.IGNORECASE) if disease else None
-    mech_pats = [re.compile(rf"\b{re.escape(t)}\b", re.IGNORECASE) for t in mechanism_terms if len(t) >= 3]
-
-    all_query_terms = [drug_a, drug_b] + ([disease] if disease else []) + mechanism_terms
+    norm_dis = normalize_disease_name(disease)
+    all_query_terms = [drug_a, drug_b] + ([norm_dis] if norm_dis else []) + mechanism_terms
 
     scored_articles = []
     for art in articles:
         text = f"{art['title']} {art.get('abstract', '')}"
 
-        has_a = bool(drug_a_pat.search(text))
-        has_b = bool(drug_b_pat.search(text))
-        has_dis = bool(dis_pat.search(text)) if dis_pat else False
-        matched_mechs = [t for p, t in zip(mech_pats, mechanism_terms) if p.search(text)]
+        has_a = check_drug_mentions(text, drug_a)
+        has_b = check_drug_mentions(text, drug_b)
 
-        score = 0.0
+        has_disease = False
+        if norm_dis:
+            has_disease = bool(re.search(rf"\b{re.escape(norm_dis)}\b", text, re.IGNORECASE))
+
+        matched_mechs = [
+            m for m in mechanism_terms
+            if re.search(rf"\b{re.escape(m)}\b", text, re.IGNORECASE)
+        ]
+
         if has_a and has_b:
-            score += 5.0
             evidence_type = "combination"
-            matched_ctx = f" and {disease}" if has_dis else (f" and {', '.join(matched_mechs)}" if matched_mechs else "")
+            matched_ctx = f" and {norm_dis}" if has_disease else (f" and {', '.join(matched_mechs)}" if matched_mechs else "")
             match_reason = f"Combination evidence: study evaluates both {drug_a} and {drug_b}{matched_ctx}."
-        elif has_a:
-            score += 2.0 + len(matched_mechs) * 0.5 + (1.0 if has_dis else 0.0)
+            score = 10.0 + (3.0 if has_disease else 0.0) + len(matched_mechs) * 0.5
+        elif has_a and not has_b:
             evidence_type = "single_drug"
-            ctx = f" in {disease}" if has_dis else (f" targeting {', '.join(matched_mechs)}" if matched_mechs else "")
-            match_reason = f"Single-drug support: investigates {drug_a}{ctx}."
-        elif has_b:
-            score += 2.0 + len(matched_mechs) * 0.5 + (1.0 if has_dis else 0.0)
+            matched_ctx = f" in {norm_dis}" if has_disease else (f" targeting {', '.join(matched_mechs)}" if matched_mechs else "")
+            match_reason = f"Single-drug support: investigates {drug_a}{matched_ctx} (does not evaluate combination with {drug_b})."
+            score = 3.0 + (2.0 if has_disease else 0.0) + len(matched_mechs) * 0.5
+        elif has_b and not has_a:
             evidence_type = "single_drug"
-            ctx = f" in {disease}" if has_dis else (f" targeting {', '.join(matched_mechs)}" if matched_mechs else "")
-            match_reason = f"Single-drug support: investigates {drug_b}{ctx}."
+            matched_ctx = f" in {norm_dis}" if has_disease else (f" targeting {', '.join(matched_mechs)}" if matched_mechs else "")
+            match_reason = f"Single-drug support: investigates {drug_b}{matched_ctx} (does not evaluate combination with {drug_a})."
+            score = 3.0 + (2.0 if has_disease else 0.0) + len(matched_mechs) * 0.5
         else:
-            score += 0.5 + len(matched_mechs) * 0.5
-            evidence_type = "mechanistic_context"
-            match_reason = f"Mechanistic context: reports on biological pathway ({', '.join(matched_mechs or [disease or 'oncology'])})."
+            evidence_type = "weak"
+            matched_ctx = f" for {norm_dis}" if has_disease else (f" ({', '.join(matched_mechs)})" if matched_mechs else "")
+            match_reason = f"Related disease context: mentions related biological context{matched_ctx}, but neither drug directly."
+            score = 0.5 + (1.0 if has_disease else 0.0) + len(matched_mechs) * 0.5
 
-        snippet = _extract_best_snippet(art.get("abstract", ""), all_query_terms)
+        snippet = _extract_best_snippet(art.get("abstract", ""), all_query_terms, drug_a=drug_a, drug_b=drug_b)
 
         scored_articles.append((
             score,
@@ -315,10 +583,9 @@ def _rank_and_format_citations(
             }
         ))
 
-    # Sort combination first, then highest score
+    # Sort strictly by evidence score descending (combination first, then single-drug, then weak)
     scored_articles.sort(key=lambda x: x[0], reverse=True)
 
-    # Return top max_citations
     return [item[1] for item in scored_articles[:max_citations]]
 
 
@@ -336,51 +603,35 @@ def retrieve_literature_rag(
 ) -> Dict[str, Any]:
     """
     Perform retrieve-then-cite PubMed RAG for a drug combination prediction:
-    1. Extracts 1-3 mechanism terms from the cited graph edges/explanation.
-    2. Builds multi-tiered PubMed queries prioritizing combination hits.
+    1. Extracts mechanism terms (genes, proteins, pathways) from the cited graph edges/explanation.
+       Strictly EXCLUDES other diseases, phenotypes, and indications unless matching user disease_context.
+    2. Builds multi-tiered PubMed queries prioritizing combination hits:
+       - Tier 1: (drug_a AND drug_b) AND (user_disease OR gene/pathway terms) [capped at max 3 terms]
+       - Tier 2: (drug_a AND drug_b) [combination alone without extra diseases]
+       - Tier 3: single-drug + user_disease [explicitly single-drug evidence]
     3. Retrieves genuine records via NCBI ESearch + EFetch.
-    4. Ranks abstracts and extracts real 1-2 sentence snippets.
-    5. Returns structured literature object with citations, query, and match reasons.
+    4. Ranks abstracts and verifies both drugs appear for "combination" labeling.
+    5. Returns structured literature object with citations, query_used, and match reasons.
     """
     drug_a = drug_a_name.strip()
     drug_b = drug_b_name.strip()
-    disease = disease_context.strip() if disease_context else ""
+    norm_disease = normalize_disease_name(disease_context)
 
-    # 1. Extract 1-3 mechanism terms from top edges / explanation text
-    mechanism_terms: List[str] = []
-    if top_edges:
-        for e in top_edges:
-            src = e.get("source", "")
-            tgt = e.get("target", "")
-            for node in (src, tgt):
-                node_clean = node.strip()
-                if (
-                    node_clean
-                    and node_clean.lower() not in (drug_a.lower(), drug_b.lower(), disease.lower())
-                    and len(node_clean) >= 3
-                    and not node_clean.lower().startswith("db")
-                    and node_clean not in mechanism_terms
-                ):
-                    mechanism_terms.append(node_clean)
-                    if len(mechanism_terms) >= 3:
-                        break
-            if len(mechanism_terms) >= 3:
-                break
-
-    # If no terms found from edges, extract prominent capitalized tokens from explanation text
-    if not mechanism_terms and explanation_text:
-        words = re.findall(r"\b[A-Z0-9]{3,}\b", explanation_text)
-        for w in words:
-            if w.lower() not in (drug_a.lower(), drug_b.lower()) and w not in mechanism_terms:
-                mechanism_terms.append(w)
-                if len(mechanism_terms) >= 2:
-                    break
+    # 1. Extract mechanism terms (genes, proteins, pathways only; NO unrelated diseases)
+    mechanism_terms = extract_mechanism_terms(
+        top_edges=top_edges,
+        explanation_text=explanation_text,
+        drug_a=drug_a,
+        drug_b=drug_b,
+        disease_context=norm_disease,
+        max_terms=3,
+    )
 
     # 2. Check Cache
     cache_key = (
         drug_a.lower(),
         drug_b.lower(),
-        disease.lower(),
+        norm_disease.lower(),
         ",".join(sorted(t.lower() for t in mechanism_terms)),
     )
     cached = _get_cached_literature(cache_key)
@@ -388,33 +639,22 @@ def retrieve_literature_rag(
         return cached
 
     # 3. Formulate multi-tier queries
-    # Tier 1: Combination + Disease or Mechanism
-    drug_a_q = f'"{drug_a}"' if " " in drug_a else drug_a
-    drug_b_q = f'"{drug_b}"' if " " in drug_b else drug_b
-
-    context_terms = ([f'"{disease}"' if " " in disease else disease] if disease else []) + [
-        f'"{m}"' if " " in m else m for m in mechanism_terms
-    ]
-
-    tier1_query = f"({drug_a_q} AND {drug_b_q})"
-    if context_terms:
-        tier1_query += f" AND ({' OR '.join(context_terms[:3])})"
-
-    tier2_query = f"{drug_a_q} AND {drug_b_q}"
-
-    # Tier 3: Drug A with mechanism + Drug B with mechanism
-    tier3_a_query = f"{drug_a_q} AND ({' OR '.join(context_terms[:2])})" if context_terms else drug_a_q
-    tier3_b_query = f"{drug_b_q} AND ({' OR '.join(context_terms[:2])})" if context_terms else drug_b_q
+    tier1_query, tier2_query, tier3_a_query, tier3_b_query = build_pubmed_queries(
+        drug_a=drug_a,
+        drug_b=drug_b,
+        disease_context=norm_disease,
+        mechanism_terms=mechanism_terms,
+    )
 
     query_used = tier1_query
     pmids = _esearch(tier1_query, retmax=10)
 
-    if not pmids:
-        # Try Tier 2 (Combination alone)
+    if not pmids and tier2_query != tier1_query:
+        # Try Tier 2 (Combination alone without extra terms)
         query_used = tier2_query
         pmids = _esearch(tier2_query, retmax=8)
 
-    if not pmids and context_terms:
+    if not pmids and (norm_disease or mechanism_terms):
         # Try Tier 3 (Single-drug mechanistic support)
         query_used = f"{tier3_a_query} [fallback single-drug]"
         pmids_a = _esearch(tier3_a_query, retmax=4)
@@ -468,7 +708,7 @@ def retrieve_literature_rag(
         articles=articles,
         drug_a=drug_a,
         drug_b=drug_b,
-        disease=disease,
+        disease=norm_disease,
         mechanism_terms=mechanism_terms,
         max_citations=max_citations,
     )
@@ -484,7 +724,10 @@ def retrieve_literature_rag(
     return res
 
 
-# Backward compatibility wrapper for old callers
+# ---------------------------------------------------------------------------
+# Backward Compatibility Wrappers
+# ---------------------------------------------------------------------------
+
 def get_supporting_literature(
     drug_name: str,
     target_or_disease: str,
