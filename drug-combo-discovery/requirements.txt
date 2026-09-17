@@ -1,0 +1,16 @@
+torch
+torch-geometric
+rdkit
+pandas
+numpy
+scikit-learn
+pytorch-lightning
+fastapi
+uvicorn
+streamlit
+networkx
+pyvis
+matplotlib
+tqdm
+requests
+transformers

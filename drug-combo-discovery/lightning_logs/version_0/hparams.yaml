@@ -1,0 +1,76 @@
+dropout: 0.3
+hidden_dim: 128
+lr: 0.001
+max_epochs: 30
+metadata: !!python/tuple
+- - gene/protein
+  - drug
+  - disease
+  - pathway
+- - !!python/tuple
+    - disease
+    - contraindication
+    - drug
+  - !!python/tuple
+    - disease
+    - disease_disease
+    - disease
+  - !!python/tuple
+    - disease
+    - disease_protein
+    - gene/protein
+  - !!python/tuple
+    - disease
+    - indication
+    - drug
+  - !!python/tuple
+    - disease
+    - off-label use
+    - drug
+  - !!python/tuple
+    - drug
+    - contraindication
+    - disease
+  - !!python/tuple
+    - drug
+    - drug_drug
+    - drug
+  - !!python/tuple
+    - drug
+    - drug_protein
+    - gene/protein
+  - !!python/tuple
+    - drug
+    - indication
+    - disease
+  - !!python/tuple
+    - drug
+    - off-label use
+    - disease
+  - !!python/tuple
+    - gene/protein
+    - disease_protein
+    - disease
+  - !!python/tuple
+    - gene/protein
+    - drug_protein
+    - drug
+  - !!python/tuple
+    - gene/protein
+    - pathway_protein
+    - pathway
+  - !!python/tuple
+    - gene/protein
+    - protein_protein
+    - gene/protein
+  - !!python/tuple
+    - pathway
+    - pathway_protein
+    - gene/protein
+num_heads: 4
+num_nodes_dict:
+  disease: 11250
+  drug: 7946
+  gene/protein: 19585
+  pathway: 2020
+weight_decay: 0.0001

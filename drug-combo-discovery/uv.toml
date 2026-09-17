@@ -1,0 +1,5 @@
+concurrent-downloads = 2
+concurrent-builds = 2
+concurrent-installs = 2
+link-mode = "copy"
+torch-backend = "cu124"
