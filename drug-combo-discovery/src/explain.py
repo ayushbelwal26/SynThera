@@ -443,14 +443,28 @@ def _generate_explanation(drug_a_name, drug_b_name, top_edges, all_edges=None, p
 # Faithfulness checks — necessity and sufficiency
 # ---------------------------------------------------------------------------
 
-def _necessity_check(module, batch, top_edges, predicted_class, original_prob, device):
+def _necessity_check(
+    module,
+    batch,
+    top_edges,
+    predicted_class,
+    original_prob,
+    device,
+    threshold_synergy=THRESHOLD_SYNERGY,
+    threshold_antagonism=THRESHOLD_ANTAGONISM,
+):
     """
     NECESSITY: Remove the top-K explanation edges from the full subgraph and
     rerun inference.  A large probability drop means those edges were necessary
-    for the prediction.  GNNs are robust to edge removal, so this number is
-    often small — which is expected, not a bug.
+    for the prediction.  GNNs are robust to edge removal in dense molecular graphs,
+    so this probability drop (delta_pct) is often small — which is expected and
+    scientifically documented.
 
-    Returns % drop in predicted-class probability (positive = drop, negative = rise).
+    Formula:
+        necessity_delta_pct = ((original_prob - ablated_score) / original_prob) * 100
+
+    Returns:
+        (delta_pct, ablated_score, ablated_class)
     """
     batch_pruned = batch.clone().to(device)
 
@@ -481,9 +495,17 @@ def _necessity_check(module, batch, top_edges, predicted_class, original_prob, d
         logits_pruned, _ = module(batch_pruned)
         probs_pruned      = F.softmax(logits_pruned, dim=-1).squeeze(0).cpu()
 
-    new_prob  = probs_pruned[predicted_class].item()
-    delta_pct = round((original_prob - new_prob) / max(original_prob, 1e-9) * 100, 2)
-    return delta_pct
+    ablated_score = probs_pruned[predicted_class].item()
+    p_ant_pruned, p_add_pruned, p_syn_pruned = probs_pruned.tolist()
+    if p_syn_pruned > threshold_synergy:
+        ablated_class = "synergy"
+    elif p_ant_pruned > threshold_antagonism:
+        ablated_class = "antagonism"
+    else:
+        ablated_class = "additive"
+
+    delta_pct = round((original_prob - ablated_score) / max(original_prob, 1e-9) * 100, 2)
+    return delta_pct, ablated_score, ablated_class
 
 
 def _sufficiency_check(
@@ -493,22 +515,27 @@ def _sufficiency_check(
     predicted_class,
     original_prob,
     device,
+    threshold_synergy=THRESHOLD_SYNERGY,
+    threshold_antagonism=THRESHOLD_ANTAGONISM,
 ):
     """
     SUFFICIENCY: Build a heavily pruned subgraph that keeps ONLY the top-K
     explanation edges (all other message-passing edges are removed; all nodes
     are retained so the pair-scorer MLP can still run).
 
+    Formula:
+        sufficiency_pct = (new_prob / original_prob) * 100
+
     Re-run inference on this minimal subgraph and report:
       - sufficiency_retained_pct : new_prob / original_prob * 100
         (100% = top-K edges alone are sufficient to recover the full prediction;
          50% = they carry half the signal)
-      - sufficiency_class_preserved : bool — does argmax still agree with the
-        original calibrated prediction?
+      - sufficiency_class_preserved : bool — does the calibrated prediction
+        on the isolated subgraph match the original predicted class?
+      - new_prob : float — raw predicted-class probability on isolated subgraph
 
-    This is the more diagnostic faithfulness metric for our pitch: if 10 edges
-    out of thousands can reproduce most of the model's confidence, those edges
-    really are load-bearing.
+    This is the decisive faithfulness metric: if 10 edges out of thousands
+    can reproduce most of the model's confidence, those edges really are load-bearing.
     """
     batch_suf = batch.clone().to(device)
 
@@ -552,14 +579,22 @@ def _sufficiency_check(
         logits_suf, _ = module(batch_suf)
         probs_suf      = F.softmax(logits_suf, dim=-1).squeeze(0).cpu()
 
-    new_prob     = probs_suf[predicted_class].item()
-    argmax_class = probs_suf.argmax().item()
+    new_prob = probs_suf[predicted_class].item()
+    p_ant_suf, p_add_suf, p_syn_suf = probs_suf.tolist()
+    if p_syn_suf > threshold_synergy:
+        suf_class_name = "synergy"
+    elif p_ant_suf > threshold_antagonism:
+        suf_class_name = "antagonism"
+    else:
+        suf_class_name = "additive"
 
-    # % of original probability retained by the 10-edge subgraph
+    predicted_class_name = CLASS_NAMES[predicted_class]
+
+    # % of original probability retained by the top-K edge subgraph
     retained_pct = round(new_prob / max(original_prob, 1e-9) * 100, 2)
 
-    # Does the argmax class match the original predicted class?
-    class_preserved = (argmax_class == predicted_class)
+    # Does the calibrated class match the original predicted class?
+    class_preserved = (suf_class_name == predicted_class_name)
 
     return retained_pct, class_preserved, new_prob
 
@@ -569,9 +604,9 @@ def _sufficiency_check(
 # ---------------------------------------------------------------------------
 
 def explain_prediction(
-    drug_a_id,
-    drug_b_id,
-    cell_line_name,
+    drug_a_id: str,
+    drug_b_id: str,
+    cell_line_name: str,
     module,
     heterodata,
     device="cpu",
@@ -579,7 +614,9 @@ def explain_prediction(
     threshold_synergy=THRESHOLD_SYNERGY,
     threshold_antagonism=THRESHOLD_ANTAGONISM,
     run_faithfulness=True,
-):
+    run_literature=True,
+    disease_context: Optional[str] = None,
+) -> dict[str, Any]:
     """
     Generate an interpretable explanation for a (drug_A, drug_B, cell_line) prediction.
 
@@ -587,7 +624,10 @@ def explain_prediction(
       drug_a, drug_a_name, drug_b, drug_b_name, cell_line,
       predicted_class, score, p_antagonism, p_additive, p_synergy,
       top_edges (list of {source, relation, target, importance}),
-      explanation_text, faithfulness_delta_pct
+      explanation_text, supporting_literature,
+      faithfulness ({original_score, original_class, ablated_score, ablated_class,
+                     sufficiency, necessity, explanation_faithful, rationale,
+                     k_edges_ablated, error})
     """
     name_lookup, _  = _build_name_lookups(heterodata)
     node_maps        = _get_node_maps(heterodata)
@@ -649,28 +689,108 @@ def explain_prediction(
     top_edges, all_edges = _score_edges(batch, grad_norms, name_lookup, top_k=top_k)
     print(f"  [explain] Top {len(top_edges)} explanation edges identified.")
 
-    # ── Necessity faithfulness check (optional — skipped during search) ──────────────────────
+    # ── Necessity & Sufficiency faithfulness checks (skipped during search) ─────────────────
     if run_faithfulness:
-        print("  [explain] Running necessity check (remove top edges)...")
-        necessity_delta = _necessity_check(
-            module, batch, top_edges, predicted_class_idx, original_prob, device
-        )
-        print(f"  [explain] Necessity delta: {necessity_delta:+.1f}% (drop in predicted-class prob)")
+        if len(top_edges) == 0:
+            necessity_delta = None
+            suf_retained = None
+            suf_class_ok = None
+            suf_prob = None
+            faithfulness = {
+                "original_score": round(original_prob, 4),
+                "original_class": predicted_class_name,
+                "ablated_score": None,
+                "ablated_class": None,
+                "sufficiency": None,
+                "necessity": None,
+                "explanation_faithful": False,
+                "rationale": "Faithfulness ablation could not be evaluated: no explanation edges identified in the local subgraph.",
+                "k_edges_ablated": 0,
+                "error": "No explanation edges available to ablate.",
+            }
+        else:
+            try:
+                print(f"  [explain] Running necessity ablation check (removing top {len(top_edges)} edges)...")
+                necessity_delta, ablated_score, ablated_class = _necessity_check(
+                    module,
+                    batch,
+                    top_edges,
+                    predicted_class_idx,
+                    original_prob,
+                    device,
+                    threshold_synergy=threshold_synergy,
+                    threshold_antagonism=threshold_antagonism,
+                )
+                print(
+                    f"  [explain] Necessity delta: {necessity_delta:+.1f}% "
+                    f"(prob drop: {original_prob:.3f} -> {ablated_score:.3f}, class: {ablated_class})"
+                )
 
-        # ── Sufficiency faithfulness check ─────────────────────────────────────────────
-        print("  [explain] Running sufficiency check (keep ONLY top edges)...")
-        suf_retained, suf_class_ok, suf_prob = _sufficiency_check(
-            module, batch, top_edges, predicted_class_idx, original_prob, device
-        )
-        print(
-            f"  [explain] Sufficiency: {suf_retained:.1f}% of original probability retained "
-            f"with only {len(top_edges)} edges  |  class preserved: {suf_class_ok}"
-        )
+                # ── Sufficiency faithfulness check ─────────────────────────────────────────────
+                print(f"  [explain] Running sufficiency check (keeping ONLY top {len(top_edges)} edges)...")
+                suf_retained, suf_class_ok, suf_prob = _sufficiency_check(
+                    module,
+                    batch,
+                    top_edges,
+                    predicted_class_idx,
+                    original_prob,
+                    device,
+                    threshold_synergy=threshold_synergy,
+                    threshold_antagonism=threshold_antagonism,
+                )
+                print(
+                    f"  [explain] Sufficiency: {suf_retained:.1f}% of original probability retained "
+                    f"with only {len(top_edges)} edges  |  class preserved: {suf_class_ok}"
+                )
+
+                is_faithful = bool(suf_retained >= 70.0 and suf_class_ok)
+                if is_faithful:
+                    rationale = (
+                        f"The isolated {len(top_edges)}-edge attribution subgraph retains {suf_retained:.1f}% of original confidence "
+                        f"with predicted class preserved, verifying that the cited pathway drives the GNN prediction."
+                    )
+                else:
+                    rationale = (
+                        f"The isolated attribution subgraph retains {suf_retained:.1f}% of confidence (below the 70.0% verification threshold "
+                        f"or class preserved: {suf_class_ok}), indicating the prediction relies on broader multi-hop graph context."
+                    )
+
+                faithfulness = {
+                    "original_score": round(original_prob, 4),
+                    "original_class": predicted_class_name,
+                    "ablated_score": round(ablated_score, 4),
+                    "ablated_class": ablated_class,
+                    "sufficiency": round(suf_retained, 2),
+                    "necessity": round(necessity_delta, 2),
+                    "explanation_faithful": is_faithful,
+                    "rationale": rationale,
+                    "k_edges_ablated": len(top_edges),
+                    "error": None,
+                }
+            except Exception as ex:
+                print(f"  [explain] Warning: Faithfulness ablation failed with error: {ex}")
+                necessity_delta = None
+                suf_retained = None
+                suf_class_ok = None
+                suf_prob = None
+                faithfulness = {
+                    "original_score": round(original_prob, 4),
+                    "original_class": predicted_class_name,
+                    "ablated_score": None,
+                    "ablated_class": None,
+                    "sufficiency": None,
+                    "necessity": None,
+                    "explanation_faithful": False,
+                    "rationale": f"Faithfulness ablation computation failed: {str(ex)}",
+                    "k_edges_ablated": len(top_edges),
+                    "error": str(ex),
+                }
     else:
         necessity_delta = None
         suf_retained    = None
         suf_class_ok    = None
         suf_prob        = None
+        faithfulness    = None
         print("  [explain] Faithfulness checks skipped (run_faithfulness=False).")
 
     # ── NL explanation ─────────────────────────────────────────────────────
@@ -679,18 +799,23 @@ def explain_prediction(
     )
     print(f"  [explain] {explanation_text}")
 
-    # ── Supporting PubMed literature ───────────────────────────────────────
-    # Retrieve up to 2 relevant PubMed citations for the primary drug+term
-    # that drove the explanation template.  Returns [] on any failure.
-    print("  [explain] Fetching supporting literature from PubMed...")
-    supporting_literature = get_literature_for_explanation(
-        drug_a_name      = drug_a_name,
-        drug_b_name      = drug_b_name,
-        explanation_text = explanation_text,
-        top_edges        = top_edges,
-        all_edges        = all_edges,
-        max_results      = 2,
-    )
+    # ── Supporting PubMed literature (RAG) ──────────────────────────────────
+    if run_literature:
+        print("  [explain] Fetching supporting literature from PubMed (RAG)...")
+        from literature import retrieve_literature_rag
+        literature_result = retrieve_literature_rag(
+            drug_a_name      = drug_a_name,
+            drug_b_name      = drug_b_name,
+            disease_context  = disease_context,
+            top_edges        = top_edges,
+            explanation_text = explanation_text,
+            max_citations    = 3,
+        )
+        supporting_literature = literature_result.get("citations", [])
+    else:
+        print("  [explain] Literature retrieval skipped (run_literature=False).")
+        literature_result = None
+        supporting_literature = []
 
     serialized_edges = [
         {
@@ -718,17 +843,15 @@ def explain_prediction(
         "p_synergy":                   round(p_syn, 6),
         "top_edges":                   serialized_edges,
         "explanation_text":            explanation_text,
-        # ── Supporting Literature (PubMed) ───────────────────────────────
+        # ── Supporting Literature (PubMed RAG) ───────────────────────────────
+        "literature":                  literature_result,
         "supporting_literature":       supporting_literature,
-        # ── Faithfulness metrics ─────────────────────────────────────────
-        # Necessity: how much does removing the top-K edges hurt the prediction?
-        # (small values are expected due to GNN robustness -- not a bug)
+        # ── Structured Faithfulness Object ───────────────────────────────
+        "faithfulness":                faithfulness,
+        # ── Backward-compatible top-level Faithfulness metrics ────────────
         "necessity_delta_pct":         necessity_delta,
-        # Sufficiency: with ONLY the top-K edges, how much of the original
-        # prediction confidence is retained?  High = edges are load-bearing.
         "sufficiency_retained_pct":    suf_retained,
         "sufficiency_class_preserved": suf_class_ok,
-        # Raw probabilities on sufficiency-only subgraph (for debugging)
         "sufficiency_prob":            round(suf_prob, 6) if suf_prob is not None else None,
     }
 

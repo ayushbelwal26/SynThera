@@ -28,13 +28,38 @@ export interface ExplanationEdge {
 }
 
 export interface LiteratureCitation {
+  pmid: string;
   title: string;
   year: string;
-  first_author: string;
-  pmid: string;
+  journal?: string;
+  first_author?: string;
+  snippet?: string;
   url: string;
+  match_reason?: string;
+  evidence_type?: 'combination' | 'single_drug' | 'mechanistic_context' | string;
   relation_context?: string;
   summary?: string;
+}
+
+export interface LiteratureResult {
+  citations: LiteratureCitation[];
+  query_used: string;
+  retrieval_method: string;
+  error?: string | null;
+  no_literature_reason?: string | null;
+}
+
+export interface FaithfulnessResult {
+  original_score: number;
+  original_class: string;
+  ablated_score: number | null;
+  ablated_class: string | null;
+  sufficiency: number | null;
+  necessity: number | null;
+  explanation_faithful: boolean;
+  rationale: string;
+  k_edges_ablated: number;
+  error?: string | null;
 }
 
 export interface PredictionResult {
@@ -51,13 +76,20 @@ export interface PredictionResult {
   top_edges: ExplanationEdge[];
   explanation_text: string;
   supporting_literature: LiteratureCitation[];
+  literature?: LiteratureResult | null;
   
   // Real faithfulness metrics (measured via in-silico ablation on the GNN)
+  faithfulness?: FaithfulnessResult | null;
   necessity_delta_pct?: number;        // probability drop when top edges are removed
   sufficiency_retained_pct?: number;   // probability retained when ONLY top edges are kept
   sufficiency_class_preserved?: boolean;
   sufficiency_prob?: number;
   
+  rank?: number;
+  search_method?: string;
+  evidence_tier?: string;
+  direct_disease_target?: boolean;
+
   cached?: boolean;
   timestamp?: string;
 }
@@ -74,12 +106,18 @@ export interface SearchRequest {
   cell_line: string;
   max_candidates?: number;
   top_k?: number;
+  search_method?: 'beam' | 'greedy';
+  beam_width?: number;
+  inspect_top_k?: number;
 }
 
 export interface SearchResponse {
   disease: string;
   cell_line: string;
+  search_method?: string;
+  beam_width?: number;
   candidate_pool_size: number;
+  max_candidates_scored?: number;
   results: PredictionResult[];
 }
 

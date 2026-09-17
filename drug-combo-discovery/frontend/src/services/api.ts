@@ -109,11 +109,14 @@ export async function predictCombination(
   request: PredictRequest,
   signal?: AbortSignal
 ): Promise<PredictionResult> {
-  const payload = {
+  const payload: Record<string, any> = {
     drug_a: request.drug_a.trim(),
     drug_b: request.drug_b.trim(),
     cell_line: request.cell_line.trim(),
   };
+  if (request.disease && request.disease.trim()) {
+    payload.disease = request.disease.trim();
+  }
   const result = await fetchJson<PredictionResult>(`${API_BASE}/predict`, {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -137,6 +140,9 @@ export async function searchCombinations(
     cell_line: request.cell_line.trim(),
     max_candidates: request.max_candidates ?? 15,
     top_k: request.top_k ?? 5,
+    search_method: request.search_method ?? 'beam',
+    beam_width: request.beam_width ?? 5,
+    inspect_top_k: request.inspect_top_k ?? 0,
   };
   return fetchJson<SearchResponse>(`${API_BASE}/search`, {
     method: 'POST',

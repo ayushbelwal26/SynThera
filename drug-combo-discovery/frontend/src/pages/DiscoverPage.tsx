@@ -332,18 +332,28 @@ export const DiscoverPage: React.FC = () => {
           {/* Discovery Results Table */}
           {searchResults && (
             <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-6 shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-[#E5E5E0] pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E5E5E0] pb-3 gap-2">
                 <div>
                   <h3 className="font-serif text-lg font-bold text-[#0F172A]">
                     Ranked Discovery Results for '{searchResults.disease}'
                   </h3>
                   <p className="text-xs text-[#64748B] font-mono mt-0.5">
                     Context: {searchResults.cell_line} &bull; Candidate Pool: {searchResults.candidate_pool_size} compounds
+                    {searchResults.max_candidates_scored ? ` • Scored: ${searchResults.max_candidates_scored} pairs` : ''}
                   </p>
                 </div>
-                <span className="text-xs font-mono text-[#0D9488] bg-[#F0FDFA] border border-[#99F6E4] px-2.5 py-1 rounded font-semibold">
-                  {searchResults.results.length} Top Pairs Explained
-                </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {searchResults.search_method && (
+                    <span className="text-xs font-mono text-[#0D9488] bg-[#F0FDFA] border border-[#99F6E4] px-2.5 py-1 rounded font-semibold">
+                      {searchResults.search_method === 'beam'
+                        ? `Beam search (width=${searchResults.beam_width ?? 5}, pool=${searchResults.candidate_pool_size}, scored=${searchResults.max_candidates_scored ?? searchResults.results.length})`
+                        : `Greedy search (pool=${searchResults.candidate_pool_size}, scored=${searchResults.max_candidates_scored ?? searchResults.results.length})`}
+                    </span>
+                  )}
+                  <span className="text-xs font-mono text-[#475569] bg-[#F1F5F9] border border-[#E2E8F0] px-2.5 py-1 rounded font-semibold">
+                    Top {searchResults.results.length} Pairs
+                  </span>
+                </div>
               </div>
 
               <div className="divide-y divide-[#E5E5E0]">
@@ -355,7 +365,7 @@ export const DiscoverPage: React.FC = () => {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs text-[#94A3B8] font-bold">
-                          #{idx + 1}
+                          #{pair.rank ?? idx + 1}
                         </span>
                         <h4 className="font-semibold text-sm text-[#0F172A]">
                           {pair.drug_a_name} × {pair.drug_b_name}

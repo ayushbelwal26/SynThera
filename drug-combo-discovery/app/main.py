@@ -47,7 +47,12 @@ if ROOT_DIR not in sys.path:
 
 from predict import load_model, _get_node_maps
 from explain import explain_prediction, _build_name_lookups
-from search import find_candidate_drugs, score_candidate_pairs, get_full_explanations_for_top_k
+from search import (
+    find_candidate_drugs,
+    score_candidate_pairs,
+    beam_search_combinations,
+    get_full_explanations_for_top_k,
+)
 from cell_line_mapping import get_relevant_cell_lines, is_cancer_disease
 
 # File paths
@@ -166,6 +171,7 @@ class PredictRequest(BaseModel):
     drug_a: str = Field(..., description="Drug A name (e.g. 'Temozolomide') or DrugBank ID (e.g. 'DB00853')")
     drug_b: str = Field(..., description="Drug B name (e.g. 'Cyclophosphamide') or DrugBank ID (e.g. 'DB00531')")
     cell_line: str = Field(..., description="Cell line name (e.g. 'T98G', 'A549', 'OVCAR-5')")
+    disease: Optional[str] = Field(None, description="Target disease context (e.g. 'glioblastoma')")
 
     model_config = {
         "json_schema_extra": {
@@ -173,6 +179,7 @@ class PredictRequest(BaseModel):
                 "drug_a": "Temozolomide",
                 "drug_b": "Cyclophosphamide",
                 "cell_line": "T98G",
+                "disease": "glioblastoma",
             }
         }
     }
@@ -182,7 +189,10 @@ class SearchRequest(BaseModel):
     disease: str = Field(..., description="Target disease name (e.g. 'glioblastoma')")
     cell_line: str = Field(..., description="Target cell line name (e.g. 'T98G')")
     max_candidates: int = Field(20, description="Maximum candidate drugs to discover from PrimeKG")
-    top_k: int = Field(5, description="Number of top-scoring candidate pairs to explain")
+    top_k: int = Field(5, description="Number of top-scoring candidate pairs to return")
+    search_method: str = Field("beam", description="Search strategy: 'beam' (preferred) or 'greedy'")
+    beam_width: int = Field(5, description="Beam width B for state-space expansion (used when search_method='beam')")
+    inspect_top_k: int = Field(0, description="Optional number of top hits (0-3) to run in-silico faithfulness ablation on")
 
     model_config = {
         "json_schema_extra": {
@@ -191,6 +201,9 @@ class SearchRequest(BaseModel):
                 "cell_line": "T98G",
                 "max_candidates": 20,
                 "top_k": 5,
+                "search_method": "beam",
+                "beam_width": 5,
+                "inspect_top_k": 0,
             }
         }
     }
@@ -243,7 +256,21 @@ def predict(request: PredictRequest) -> Dict[str, Any]:
     """
     Predict synergy, additive, or antagonism interaction for a drug pair in a given
     cell line context, returning calibrated probabilities, mechanistic explanations,
-    top load-bearing edges, and dual faithfulness metrics (necessity + sufficiency).
+    top load-bearing edges, and a real in-silico faithfulness ablation object.
+
+    The returned `faithfulness` dictionary contains:
+      - `original_score` (float): Unablated probability on predicted class.
+      - `original_class` (str): Calibrated interaction class ('synergy', 'additive', 'antagonism').
+      - `ablated_score` (float): Probability on predicted class after ablating top-K edges.
+      - `ablated_class` (str): Predicted class on the ablated graph.
+      - `sufficiency` (float): % of original confidence retained on isolated subgraph:
+        formula: `(p_suf / p_orig) * 100%`.
+      - `necessity` (float): % probability drop when top-K edges are ablated:
+        formula: `((p_orig - p_abl) / p_orig) * 100%`.
+      - `explanation_faithful` (bool): True if sufficiency >= 70.0% with class preserved.
+      - `rationale` (str): One-sentence scientific rationale for the verification verdict.
+      - `k_edges_ablated` (int): Number of load-bearing edges ablated (default: 10).
+      - `error` (str | None): Explicit error string if an edge case prevents ablation.
     """
     drug_a_raw = request.drug_a.strip()
     drug_b_raw = request.drug_b.strip()
@@ -273,14 +300,16 @@ def predict(request: PredictRequest) -> Dict[str, Any]:
             detail=f"Cell line '{cell_line_raw}' not found in knowledge graph. Please check /cell-lines for available lines.",
         )
 
-    # 4. Check in-memory cache (symmetric on drug order)
-    cache_key = (tuple(sorted([drug_a_id, drug_b_id])), canonical_cell_line)
+    disease_raw = request.disease.strip() if request.disease else None
+
+    # 4. Check in-memory cache (symmetric on drug order, with disease context)
+    cache_key = (tuple(sorted([drug_a_id, drug_b_id])), canonical_cell_line, (disease_raw or "").lower())
     if cache_key in PREDICTION_CACHE:
         cached_result = dict(PREDICTION_CACHE[cache_key])
         cached_result["cached"] = True
         return cached_result
 
-    # 5. Run inference and explanation pipeline
+    # 5. Run inference and explanation pipeline (with real in-silico ablation and literature RAG)
     try:
         result = explain_prediction(
             drug_a_id=drug_a_id,
@@ -289,6 +318,9 @@ def predict(request: PredictRequest) -> Dict[str, Any]:
             module=MODULE,
             heterodata=HETERODATA,
             device=DEVICE,
+            run_faithfulness=True,
+            run_literature=True,
+            disease_context=disease_raw,
         )
     except Exception as e:
         raise HTTPException(
@@ -338,16 +370,18 @@ def search_combinations(request: SearchRequest) -> Dict[str, Any]:
             detail=f"Disease '{disease_raw}' could not be resolved to any node in PrimeKG knowledge graph. Please verify the disease name.",
         )
 
-    # 3. Score Candidate Pairs (Fast forward pass)
+    # 3. Score Candidate Pairs using Beam/Greedy Search
     try:
-        top_pairs = score_candidate_pairs(
+        top_pairs, search_meta = beam_search_combinations(
             disease_name=disease_raw,
             cell_line_name=canonical_cell_line,
             heterodata=HETERODATA,
             module=MODULE,
             device=DEVICE,
             max_candidate_drugs=request.max_candidates,
+            beam_width=request.beam_width,
             top_k=request.top_k,
+            search_method=request.search_method,
         )
     except Exception as e:
         raise HTTPException(
@@ -363,6 +397,7 @@ def search_combinations(request: SearchRequest) -> Dict[str, Any]:
             module=MODULE,
             heterodata=HETERODATA,
             device=DEVICE,
+            inspect_top_k=request.inspect_top_k,
         )
     except Exception as e:
         raise HTTPException(
@@ -373,7 +408,10 @@ def search_combinations(request: SearchRequest) -> Dict[str, Any]:
     return {
         "disease": disease_raw,
         "cell_line": canonical_cell_line,
-        "candidate_pool_size": len(candidates),
+        "search_method": search_meta.get("search_method", request.search_method),
+        "beam_width": search_meta.get("beam_width", request.beam_width),
+        "candidate_pool_size": search_meta.get("candidate_pool_size", len(candidates)),
+        "max_candidates_scored": search_meta.get("max_candidates_scored", len(top_pairs)),
         "results": explanations,
     }
 

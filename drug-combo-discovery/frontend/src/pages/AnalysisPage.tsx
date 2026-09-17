@@ -121,6 +121,7 @@ export const AnalysisPage: React.FC = () => {
       {/* 5. Supporting Literature & External Validation */}
       <LiteratureSection
         citations={currentPrediction.supporting_literature}
+        literature={currentPrediction.literature}
         drugAName={currentPrediction.drug_a_name}
         drugBName={currentPrediction.drug_b_name}
       />

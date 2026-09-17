@@ -47,13 +47,135 @@ _CYP_PROTEIN_INDICES_CACHE: Optional[set] = None
 # Pattern matching cytochrome P450 enzyme names (shared hepatic metabolism, not disease mechanism)
 _CYP_NAME_PATTERN = re.compile(r"^CYP\d", re.IGNORECASE)
 
-# Pattern matching non-drug biological entities (cell lines, tissues, primary cells erroneously typed as 'drug' nodes in KG)
+# ---------------------------------------------------------------------------
+# Therapeutic Candidate Quality Filter (Allow/Deny Rules)
+# ---------------------------------------------------------------------------
+
+# Platinum coordination chemotherapy drugs (MUST BE PRESERVED)
+# Matches cisplatin, carboplatin, oxaliplatin, nedaplatin, lobaplatin, satraplatin, etc.
+# Excludes pure elemental platinum ('platinum', 'platinum cation').
+_PLATINUM_CHEMOTHERAPY_PATTERN = re.compile(
+    r"\b(cisplatin|carboplatin|oxaliplatin|nedaplatin|lobaplatin|heptaplatin|picoplatin|satraplatin)\b|\b\w*platin\b",
+    re.IGNORECASE,
+)
+
+# Known approved inorganic / organometallic / photodynamic oncology therapeutics
+# E.g., Arsenic trioxide is FDA-approved for acute promyelocytic leukemia (APL)
+_ONCOLOGY_THERAPEUTIC_WHITELIST_IDS = {
+    "DB01169",  # Arsenic trioxide (Trisenox, APL leukemia therapy)
+    "DB00707",  # Porfimer sodium (Photodynamic antineoplastic therapy)
+    "DB00252",  # Bleomycin (Glycopeptide antineoplastic)
+}
+
+_ONCOLOGY_THERAPEUTIC_WHITELIST_NAMES = {
+    "arsenic trioxide",
+    "porfimer sodium",
+    "bleomycin",
+}
+
+# Elemental metals and pure mineral cations (DENY)
+_ELEMENTAL_MINERAL_PATTERN = re.compile(
+    r"^(zinc|copper|magnesium|calcium|manganese|iron|cobalt|nickel|chromium|cadmium|lead|"
+    r"barium|strontium|lithium|aluminum|sodium|potassium|arsenic|selenium|titanium|gallium|"
+    r"silver|gold|bismuth|mercury|platinum)(\s+(cation|ion|elemental|powder|metal|colloidal|unspecified form))?$",
+    re.IGNORECASE,
+)
+
+# Simple inorganic metal salts (DENY): metal cation + simple counterion
+_INORGANIC_METAL_SALT_PATTERN = re.compile(
+    r"^(zinc|copper|magnesium|calcium|manganese|ferrous|ferric|iron|aluminum|sodium|potassium|"
+    r"lithium|barium|strontium|bismuth|silver|gold|ammonium|cadmium|lead|mercury|titanium)\b"
+    r".*\b(chloride|dichloride|trichloride|sulfate|oxide|trioxide|dioxide|hydroxide|trihydroxide|"
+    r"carbonate|bicarbonate|phosphate|acetate|gluconate|citrate|bromide|iodide|fluoride|nitrate|"
+    r"stearate|undecylenate|pyrithione|picolinate|ascorbate|glycinate|trisilicate|hypochlorite|"
+    r"peroxide|salicylate|dextran|pyrophosphate|gluceptate|tartrate|fumarate|lactate)\b",
+    re.IGNORECASE,
+)
+
+# Any zinc compound (dietary mineral / supplement / inorganic salt)
+_ZINC_SUPPLEMENT_PATTERN = re.compile(r"\bzinc\b", re.IGNORECASE)
+
+# Solvents, excipients, vehicles, buffers (DENY)
+_SOLVENT_EXCIPIENT_PATTERN = re.compile(
+    r"\b(water|sterile water|heavy water|deuterium oxide|saline|normal saline|ringer's solution|"
+    r"glycerol|glycerin|propylene glycol|polyethylene glycol|peg-\d+|ethylene glycol|"
+    r"dimethyl sulfoxide|dmso|mineral oil|paraffin|petrolatum|polysorbate|tween\s*\d+|"
+    r"sodium lauryl sulfate|sodium dodecyl sulfate)\b",
+    re.IGNORECASE,
+)
+
+# Non-therapeutic diagnostic agents and contrast media (DENY)
+_DIAGNOSTIC_AGENT_PATTERN = re.compile(
+    r"\b(indocyanine green|fluorescein|trypan blue|patent blue|iohexol|iopamidol|iodixanol|"
+    r"diatrizoate|ioxaglate|gadopentetate|gadoteridol|gadobutrol)\b",
+    re.IGNORECASE,
+)
+
+# Non-drug biological entities (cell lines, tissues, primary cells erroneously typed as 'drug' nodes in KG)
 _NON_DRUG_ENTITY_PATTERN = re.compile(
     r"\b(keratinocyte|fibroblast|cell line|tissue|epithelial|endothelial|myoblast|hepatocyte|"
     r"lymphoblast|monocyte|macrophage|primary cell|stem cell|foreskin|cell sample|tissue sample|"
     r"bio-sample|cell culture|cell strain)\b",
     re.IGNORECASE,
 )
+
+
+def is_valid_therapeutic_candidate(drug_name: str, drug_id: str = "") -> bool:
+    """
+    Classify whether an entity in PrimeKG is a plausible therapeutic drug candidate.
+
+    Rule hierarchy:
+    1. Deny non-drug biological entities (cell lines, tissues, fibroblasts).
+    2. Whitelist known approved oncology inorganics/complexes (e.g. Arsenic trioxide DB01169).
+    3. Whitelist platinum coordination chemotherapy drugs (e.g. Cisplatin, Carboplatin,
+       Oxaliplatin, Nedaplatin), while excluding pure elemental platinum.
+    4. Deny elemental metals and mineral cations (Zinc, Copper, Magnesium, Potassium, etc.).
+    5. Deny simple inorganic metal salts (Zinc chloride, Zinc sulfate, Magnesium sulfate,
+       Calcium chloride, Sodium chloride, etc.).
+    6. Deny all zinc mineral/dietary supplements.
+    7. Deny solvents, excipients, vehicles, and buffers (DMSO, Glycerol, Water, Saline, etc.).
+    8. Deny diagnostic contrast media and radiopaque dyes without antineoplastic activity.
+    """
+    name_clean = drug_name.strip()
+    name_lower = name_clean.lower()
+
+    # 1. Deny non-drug biological entity artifacts
+    if _NON_DRUG_ENTITY_PATTERN.search(name_clean):
+        return False
+
+    # 2. Allow known approved oncology inorganics / complexes
+    if (drug_id and drug_id.upper() in _ONCOLOGY_THERAPEUTIC_WHITELIST_IDS) or (
+        name_lower in _ONCOLOGY_THERAPEUTIC_WHITELIST_NAMES
+    ):
+        return True
+
+    # 3. Allow platinum coordination chemotherapeutic agents (excluding elemental platinum metal)
+    if _PLATINUM_CHEMOTHERAPY_PATTERN.search(name_clean):
+        if not re.match(r"^(platinum|platinum\s+cation)$", name_clean, re.IGNORECASE):
+            return True
+
+    # 4. Deny elemental metals and mineral cations
+    if _ELEMENTAL_MINERAL_PATTERN.match(name_clean):
+        return False
+
+    # 5. Deny simple inorganic metal salts
+    if _INORGANIC_METAL_SALT_PATTERN.match(name_clean):
+        return False
+
+    # 6. Deny zinc dietary supplements and salts
+    if _ZINC_SUPPLEMENT_PATTERN.search(name_clean):
+        return False
+
+    # 7. Deny solvents, excipients, vehicles
+    if _SOLVENT_EXCIPIENT_PATTERN.search(name_clean):
+        return False
+
+    # 8. Deny diagnostic / contrast media
+    if _DIAGNOSTIC_AGENT_PATTERN.search(name_clean):
+        return False
+
+    return True
+
 
 # p_synergy threshold above which we flag a result as potentially out-of-distribution
 _HIGH_CONFIDENCE_THRESHOLD = 0.95
@@ -280,12 +402,13 @@ def find_candidate_drugs(
     direct_candidates: List[Dict[str, Any]] = []
     for d_idx in direct_drug_indices:
         d_name = drug_name_lookup[d_idx]
-        if _NON_DRUG_ENTITY_PATTERN.search(d_name):
-            logger.warning(f"Excluding non-drug biological entity artifact from direct candidates: '{d_name}' ({drug_id_lookup[d_idx]})")
+        d_id = drug_id_lookup[d_idx]
+        if not is_valid_therapeutic_candidate(d_name, d_id):
+            logger.debug(f"Excluding non-therapeutic entity from direct candidates: '{d_name}' ({d_id})")
             continue
         shared = len(disease_proteins & drug_targets[d_idx]) if disease_proteins else 0
         direct_candidates.append({
-            "drug_id": drug_id_lookup[d_idx],
+            "drug_id": d_id,
             "drug_name": d_name,
             "match_type": "direct",
             "score": 1.0,
@@ -301,7 +424,8 @@ def find_candidate_drugs(
             if d_idx in direct_drug_indices:
                 continue
             d_name = drug_name_lookup[d_idx]
-            if _NON_DRUG_ENTITY_PATTERN.search(d_name):
+            d_id = drug_id_lookup[d_idx]
+            if not is_valid_therapeutic_candidate(d_name, d_id):
                 continue
             # Only consider overlap with NON-CYP disease proteins
             shared_non_cyp = targets & disease_proteins_non_cyp
@@ -310,7 +434,7 @@ def find_candidate_drugs(
                 continue
             score = len(shared_non_cyp) / len(targets)
             indirect_candidates.append({
-                "drug_id": drug_id_lookup[d_idx],
+                "drug_id": d_id,
                 "drug_name": d_name,
                 "match_type": "target_overlap",
                 "score": round(score, 4),
@@ -347,41 +471,41 @@ def find_candidate_drugs(
 
 
 # ---------------------------------------------------------------------------
-# Stage 2: Fast Candidate Pair Scoring (Lightweight Forward Pass)
+# ---------------------------------------------------------------------------
+# Stage 2: Real GNN-Driven Beam Search & Greedy Combination Discovery
 # ---------------------------------------------------------------------------
 
-def score_candidate_pairs(
+def beam_search_combinations(
     disease_name: str,
     cell_line_name: str,
     heterodata: Optional[HeteroData] = None,
     module: Optional[Any] = None,
     device: Optional[str] = None,
     max_candidate_drugs: int = 20,
+    beam_width: int = 5,
     top_k: int = 5,
-) -> List[Dict[str, Any]]:
+    search_method: str = "beam",
+    seed_drug_id: Optional[str] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Form all unique pairs from the candidate drug pool and score them using
-    a fast forward-only pass through the trained GNN model.
+    Search candidate drug combinations using a state-space Beam Search or Greedy Search
+    driven directly by the trained SynergyGNN pair scorer.
 
-    Parameters:
-    -----------
-    disease_name : str
-        Target disease (e.g. 'glioblastoma').
-    cell_line_name : str
-        Target cell line (e.g. 'T98G'). Validated against known cell lines.
-    heterodata : HeteroData, optional
-    module : SynergyModule, optional
-    device : str, optional ('cuda' or 'cpu')
-    max_candidate_drugs : int, default 20
-        Maximum candidate drugs to form pairs from (20 drugs = 190 pairs).
-    top_k : int, default 5
-        Number of top-scoring pairs to return.
-
-    Returns:
-    --------
-    List[Dict[str, Any]]:
-        Top-K pairs sorted by p_synergy descending:
-        [{drug_a, drug_b, p_synergy, p_additive, p_antagonism, predicted_class, ...}]
+    State-Space Formulation (Depth 2 for 2-Drug Combinations):
+    - Depth 1 (Anchor Selection):
+      If seed_drug_id is provided, anchor beam initializes with [seed_drug].
+      Otherwise, expands from root to top-B candidate drugs prioritized by disease
+      indication relevance and target overlap.
+      (For greedy search, B = 1).
+    - Depth 2 (Partner Expansion):
+      Expands each anchor in the beam with eligible candidate drugs from the filtered
+      candidate pool, forming unique candidate pairs (d_a, d_b).
+    - Batched GNN Scoring:
+      All candidate pairs are scored in a batched forward pass through the trained
+      SynergyGNN model without heuristic tier overrides.
+    - Beam Pruning:
+      Prunes the candidate pool to the top-K pairs ranked strictly by p_synergy descending,
+      using stable tie-breaking on (drug_a, drug_b) IDs to guarantee reproducibility.
     """
     sys.path.insert(0, os.path.join(ROOT, "src"))
     from predict import THRESHOLD_SYNERGY, THRESHOLD_ANTAGONISM, _get_node_maps
@@ -406,7 +530,7 @@ def score_candidate_pairs(
 
     cell_idx = cell_line_map[cell_line_name]
 
-    # 3. Stage 1: Find candidate drugs
+    # 3. Stage 1: Candidate Generation (with non-drug and CYP filtering)
     candidates = find_candidate_drugs(
         disease_name,
         heterodata=heterodata,
@@ -414,24 +538,93 @@ def score_candidate_pairs(
         max_candidates=max_candidate_drugs,
     )
 
+    # Ensure candidate pool contains only plausible therapeutic drugs
+    candidates = [
+        c for c in candidates
+        if is_valid_therapeutic_candidate(c["drug_name"], c["drug_id"])
+    ]
+
+    # If seed drug requested, ensure it is anchored in candidate pool
+    if seed_drug_id and seed_drug_id in drug_id2idx:
+        existing_ids = {c["drug_id"] for c in candidates}
+        if seed_drug_id not in existing_ids:
+            from explain import _build_name_lookups
+            name_lookup, _ = _build_name_lookups(heterodata)
+            seed_name = name_lookup.get("drug", {}).get(drug_id2idx[seed_drug_id], seed_drug_id)
+            candidates.insert(0, {
+                "drug_id": seed_drug_id,
+                "drug_name": seed_name,
+                "match_type": "seed",
+                "score": 1.0,
+                "shared_targets": 0,
+            })
+
+    method_clean = "greedy" if search_method.lower() == "greedy" or beam_width <= 1 else "beam"
+    effective_b = 1 if method_clean == "greedy" else max(1, beam_width)
+
+    metadata: Dict[str, Any] = {
+        "search_method": method_clean,
+        "beam_width": effective_b,
+        "candidate_pool_size": len(candidates),
+        "max_candidates_scored": 0,
+    }
+
     if len(candidates) < 2:
         logger.warning(
             f"Fewer than 2 candidate drugs ({len(candidates)}) found for disease '{disease_name}'. "
             "Cannot form pairs."
         )
-        return []
+        return [], metadata
 
-    # 4. Form all unique unordered pairs
-    pairs = []
-    for i in range(len(candidates)):
-        for j in range(i + 1, len(candidates)):
-            pairs.append((candidates[i], candidates[j]))
+    # 4. State-Space Expansion: Depth 1 Anchor Selection
+    if seed_drug_id:
+        anchors = [c for c in candidates if c["drug_id"] == seed_drug_id]
+        if not anchors:
+            anchors = candidates[:1]
+    else:
+        # Beam of width B top candidate drugs
+        anchors = candidates[:effective_b]
 
+    # Depth 2 Partner Expansion: Pair anchors with partner drugs from candidate pool
+    unique_pairs_dict: Dict[Tuple[str, str], Tuple[Dict[str, Any], Dict[str, Any]]] = {}
+    for anchor in anchors:
+        for partner in candidates:
+            if anchor["drug_id"] == partner["drug_id"]:
+                continue  # no self-pairs
+            # Canonical unordered key
+            pair_key = (
+                min(anchor["drug_id"], partner["drug_id"]),
+                max(anchor["drug_id"], partner["drug_id"]),
+            )
+            if pair_key not in unique_pairs_dict:
+                # Maintain anchor as drug_a if seed specified
+                if seed_drug_id and partner["drug_id"] == seed_drug_id:
+                    unique_pairs_dict[pair_key] = (partner, anchor)
+                else:
+                    unique_pairs_dict[pair_key] = (anchor, partner)
+
+    # Sort pairs canonically by drug IDs to guarantee deterministic ordering
+    pairs = sorted(
+        unique_pairs_dict.values(),
+        key=lambda p: (p[0]["drug_id"], p[1]["drug_id"]),
+    )
     num_pairs = len(pairs)
-    logger.info(f"Formed {num_pairs} unique candidate pairs from {len(candidates)} drugs for '{disease_name}' @ '{cell_line_name}'.")
+    metadata["max_candidates_scored"] = num_pairs
 
-    # 5. Lightweight batched forward pass
+    logger.info(
+        f"[{method_clean.upper()} SEARCH] Expanding {len(anchors)} anchor(s) into {num_pairs} "
+        f"candidate pairs from pool of {len(candidates)} drugs for '{disease_name}' @ '{cell_line_name}'."
+    )
+
+    if num_pairs == 0:
+        return [], metadata
+
+    # 5. Batched GNN Scoring Pass
     t_start = time.time()
+    # Seed RNG to ensure identical neighbor sampling and bitwise reproducible scores across reruns
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
 
     a_indices = [drug_id2idx[p[0]["drug_id"]] for p in pairs]
     b_indices = [drug_id2idx[p[1]["drug_id"]] for p in pairs]
@@ -471,12 +664,11 @@ def score_candidate_pairs(
 
     scoring_duration = time.time() - t_start
     print(
-        f"\n[Stage 2] Scored {num_pairs} candidate pairs in {scoring_duration:.2f}s "
-        f"({(scoring_duration / num_pairs) * 1000:.1f}ms per pair) on {device}."
+        f"\n[Stage 2] {method_clean.title()} search scored {num_pairs} candidate pairs in {scoring_duration:.2f}s "
+        f"({(scoring_duration / max(num_pairs, 1)) * 1000:.1f}ms per pair) on {device}."
     )
 
-    # 6. Parse and sort results
-    ood_flagged = 0
+    # 6. Parse and Rank Candidates Strictly by Model Score (with stable tie-breaking)
     scored_pairs: List[Dict[str, Any]] = []
     for p, probs in zip(pairs, all_probs):
         p_ant, p_add, p_syn = probs
@@ -487,60 +679,67 @@ def score_candidate_pairs(
         else:
             pred = "additive"
 
-        # Out-of-distribution sanity flag: extremely high confidence on a speculative pair
-        # warrants extra scrutiny — model may be overconfident outside training distribution
         is_speculative = (
             p[0]["match_type"] == "target_overlap" or p[1]["match_type"] == "target_overlap"
         )
         high_confidence_caveat = bool(p_syn > _HIGH_CONFIDENCE_THRESHOLD and is_speculative)
-        if high_confidence_caveat:
-            ood_flagged += 1
-
-        # Determine pair evidence tier:
-        # Tier 1: both direct indication matches
-        # Tier 2: mixed (one direct, one target_overlap)
-        # Tier 3: both target_overlap
-        match_a, match_b = p[0]["match_type"], p[1]["match_type"]
-        if match_a == "direct" and match_b == "direct":
-            tier = 1
-            pair_tier_name = "both_direct"
-        elif match_a == "direct" or match_b == "direct":
-            tier = 2
-            pair_tier_name = "mixed"
-        else:
-            tier = 3
-            pair_tier_name = "both_indirect"
 
         scored_pairs.append({
             "drug_a": p[0]["drug_id"],
             "drug_a_name": p[0]["drug_name"],
             "drug_b": p[1]["drug_id"],
             "drug_b_name": p[1]["drug_name"],
-            "drug_a_match_type": match_a,
-            "drug_b_match_type": match_b,
-            "pair_tier": tier,
-            "pair_tier_name": pair_tier_name,
+            "drug_a_match_type": p[0]["match_type"],
+            "drug_b_match_type": p[1]["match_type"],
+            "score": round(p_syn, 4),
             "p_synergy": round(p_syn, 4),
             "p_additive": round(p_add, 4),
             "p_antagonism": round(p_ant, 4),
             "predicted_class": pred,
             "cell_line": cell_line_name,
+            "search_method": method_clean,
             "high_confidence_caveat": high_confidence_caveat,
+            "faithfulness": None,  # Batch search leaves faithfulness null
         })
 
-    # Tiered ranking: Sort first by pair_tier ascending (Tier 1 > Tier 2 > Tier 3),
-    # then by p_synergy descending within each tier.
-    scored_pairs.sort(key=lambda x: (x["pair_tier"], -x["p_synergy"]))
+    # Beam Pruning: Sort strictly by GNN score descending, breaking ties stably by drug IDs
+    scored_pairs.sort(key=lambda x: (-x["p_synergy"], x["drug_a"], x["drug_b"]))
 
-    if ood_flagged > 0:
-        print(
-            f"\n[Stage 2] [!] {ood_flagged} pair(s) flagged high_confidence_caveat=True "
-            f"(p_synergy > {_HIGH_CONFIDENCE_THRESHOLD:.0%} on speculative/indirect drug). "
-            "These involve target-overlap candidates without a direct disease indication — "
-            "treat with extra scrutiny before presenting as strong findings."
-        )
+    # Assign ranks
+    final_hits = scored_pairs[:top_k]
+    for i, hit in enumerate(final_hits, 1):
+        hit["rank"] = i
 
-    return scored_pairs[:top_k]
+    return final_hits, metadata
+
+
+def score_candidate_pairs(
+    disease_name: str,
+    cell_line_name: str,
+    heterodata: Optional[HeteroData] = None,
+    module: Optional[Any] = None,
+    device: Optional[str] = None,
+    max_candidate_drugs: int = 20,
+    top_k: int = 5,
+    search_method: str = "beam",
+    beam_width: int = 5,
+) -> List[Dict[str, Any]]:
+    """
+    Backward-compatible wrapper around beam_search_combinations().
+    Returns the top-K pairs ranked strictly by GNN synergy score.
+    """
+    pairs, _ = beam_search_combinations(
+        disease_name=disease_name,
+        cell_line_name=cell_line_name,
+        heterodata=heterodata,
+        module=module,
+        device=device,
+        max_candidate_drugs=max_candidate_drugs,
+        beam_width=beam_width,
+        top_k=top_k,
+        search_method=search_method,
+    )
+    return pairs
 
 
 # ---------------------------------------------------------------------------
@@ -553,21 +752,24 @@ def get_full_explanations_for_top_k(
     module: Optional[Any] = None,
     heterodata: Optional[HeteroData] = None,
     device: Optional[str] = None,
+    inspect_top_k: int = 0,
 ) -> List[Dict[str, Any]]:
     """
-    Run the full explain_prediction() pipeline (subgraph sampling, gradient
-    attribution, necessity & sufficiency faithfulness checks, and PubMed
-    literature retrieval) ONLY on the top-K pairs selected by Stage 2.
+    Run the explain_prediction() pipeline on the top-K pairs selected by Stage 2.
+    Batch search skips faithfulness ablation (faithfulness=null) to ensure sub-second
+    response times, unless inspect_top_k > 0 is explicitly requested.
 
     Parameters:
     -----------
     top_k_pairs : List[Dict[str, Any]]
-        Output list of top-K pairs from score_candidate_pairs().
+        Output list of top-K pairs from beam_search_combinations().
     cell_line_name : str
         Target cell line.
     module : SynergyModule, optional
     heterodata : HeteroData, optional
     device : str, optional
+    inspect_top_k : int, default 0
+        Number of top hits (0-3) to run in-silico faithfulness ablation on.
 
     Returns:
     --------
@@ -584,7 +786,7 @@ def get_full_explanations_for_top_k(
 
     full_explanations: List[Dict[str, Any]] = []
 
-    print(f"\n[Stage 3] Generating full explanations for top {len(top_k_pairs)} pairs...")
+    print(f"\n[Stage 3] Generating explanations for top {len(top_k_pairs)} pairs (inspect_top_k={inspect_top_k})...")
     t_start = time.time()
 
     for idx, pair in enumerate(top_k_pairs, 1):
@@ -593,7 +795,10 @@ def get_full_explanations_for_top_k(
         a_name = pair.get("drug_a_name", drug_a_id)
         b_name = pair.get("drug_b_name", drug_b_id)
 
-        print(f"\n--- [{idx}/{len(top_k_pairs)}] Explaining {a_name} + {b_name} @ {cell_line_name} ---")
+        # Compute real faithfulness and literature RAG only if requested within inspect_top_k limit
+        should_inspect = bool(idx <= inspect_top_k)
+
+        print(f"\n--- [{idx}/{len(top_k_pairs)}] Explaining {a_name} + {b_name} @ {cell_line_name} (inspect={should_inspect}) ---")
         t_pair = time.time()
         expl = explain_prediction(
             drug_a_id=drug_a_id,
@@ -602,10 +807,18 @@ def get_full_explanations_for_top_k(
             module=module,
             heterodata=heterodata,
             device=device,
-            run_faithfulness=False,  # Skip ablation during search; computed on-demand via /predict
+            run_faithfulness=should_inspect,
+            run_literature=should_inspect,
+            disease_context=pair.get("disease", ""),
         )
         expl_duration = time.time() - t_pair
         print(f"    Completed in {expl_duration:.2f}s")
+        expl["rank"] = pair.get("rank", idx)
+        expl["search_method"] = pair.get("search_method", "beam")
+        if not should_inspect:
+            expl["faithfulness"] = None
+            expl["literature"] = None
+            expl["supporting_literature"] = []
         full_explanations.append(expl)
 
     total_expl_duration = time.time() - t_start
