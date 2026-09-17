@@ -128,6 +128,46 @@ export interface SearchResponse {
   results: PredictionResult[];
 }
 
+export interface WhyNotRequest {
+  disease: string;
+  cell_line: string;
+  question: string;
+  drug_x?: string;
+  search_method?: 'beam' | 'greedy' | 'mcts';
+}
+
+export interface WhyNotScoredPair {
+  drug_a: string;
+  drug_a_name: string;
+  drug_b: string;
+  drug_b_name: string;
+  score: number;
+  p_synergy: number;
+  predicted_class: string;
+  cell_line: string;
+}
+
+export interface WhyNotResponse {
+  intent?: string;
+  drug_x?: {
+    id: string | null;
+    name: string;
+  };
+  status?: 'scored' | 'filtered' | 'unknown_drug' | 'unsupported_question';
+  best_pair?: WhyNotScoredPair | null;
+  reference_top?: WhyNotScoredPair | null;
+  verdict?: 'competitive' | 'weaker' | 'filtered' | 'not_in_graph';
+  explanation_text?: string;
+  literature?: {
+    citations: LiteratureCitation[];
+    query_used?: string;
+    retrieval_method?: string;
+  } | null;
+  faithfulness?: null;
+  error?: string;
+  hint?: string;
+}
+
 export interface CellLineRelevanceStatus {
   cellLines: string[];
   isFiltered: boolean;

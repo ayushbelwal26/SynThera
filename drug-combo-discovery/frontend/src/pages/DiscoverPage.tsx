@@ -9,6 +9,7 @@ import { CellLineDropdown } from '../components/discover/CellLineDropdown';
 import { BenchmarkPresets } from '../components/discover/BenchmarkPresets';
 import type { BenchmarkPreset } from '../components/discover/BenchmarkPresets';
 import { DiscoveryMode } from '../components/discover/DiscoveryMode';
+import { WhyNotSection } from '../components/discover/WhyNotSection';
 import { LoadingStages } from '../components/common/LoadingStages';
 import { AlertNotice } from '../components/common/AlertNotice';
 import { Badge } from '../components/common/Badge';
@@ -36,6 +37,7 @@ export const DiscoverPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Discovery search results state
+  const [searchDisease, setSearchDisease] = useState<string>('glioblastoma');
   const [searchResults, setSearchResults] = useState<SearchResponse | null>(null);
   const [inspectingPairIdx, setInspectingPairIdx] = useState<number | null>(null);
 
@@ -94,6 +96,7 @@ export const DiscoverPage: React.FC = () => {
     nSimulations: number = 50,
     mctsC: number = 1.414
   ) => {
+    setSearchDisease(disease);
     setIsLoading(true);
     setErrorMsg(null);
     setSearchResults(null);
@@ -138,6 +141,25 @@ export const DiscoverPage: React.FC = () => {
       navigate('/analysis');
     } finally {
       setInspectingPairIdx(null);
+    }
+  };
+
+  const handleInspectWhyNotPair = async (drugAId: string, drugBId: string, cl: string) => {
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      const full = await predictCombination({
+        drug_a: drugAId,
+        drug_b: drugBId,
+        cell_line: cl,
+      });
+      setCurrentPrediction(full);
+      addRecentPrediction(full);
+      navigate('/analysis');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to inspect combination.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -445,6 +467,14 @@ export const DiscoverPage: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* Why Not Drug X Diagnostic Agent */}
+          <WhyNotSection
+            disease={searchResults?.disease || searchDisease || diseaseContext || 'glioblastoma'}
+            cellLine={searchResults?.cell_line || cellLine}
+            searchMethod={(searchResults?.search_method as any) || 'beam'}
+            onInspectPair={handleInspectWhyNotPair}
+          />
         </div>
       )}
     </div>

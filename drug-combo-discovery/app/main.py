@@ -215,6 +215,26 @@ class SearchRequest(BaseModel):
     }
 
 
+class WhyNotRequest(BaseModel):
+    disease: str = Field(..., description="Target disease context (e.g. 'glioblastoma')")
+    cell_line: str = Field(..., description="Target cell line context (e.g. 'T98G')")
+    question: str = Field(..., description="Natural question (e.g. 'Why not Temozolomide?' or 'Why not Zinc chloride?')")
+    drug_x: Optional[str] = Field(None, description="Optional explicit drug name or DrugBank ID")
+    search_method: Optional[str] = Field("beam", description="Search strategy to compare against ('beam' | 'greedy' | 'mcts')")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "disease": "glioblastoma",
+                "cell_line": "T98G",
+                "question": "Why not Temozolomide?",
+                "drug_x": "Temozolomide",
+                "search_method": "beam",
+            }
+        }
+    }
+
+
 # ---------------------------------------------------------------------------
 # API Endpoints
 # ---------------------------------------------------------------------------
@@ -435,6 +455,38 @@ def search_combinations(request: SearchRequest) -> Dict[str, Any]:
         "truncated": search_meta.get("truncated", False),
         "results": explanations,
     }
+
+
+@app.post("/why-not", summary="Ask Why a Drug is Missing, Filtered, or Ranked Below Top Combinations")
+def why_not(request: WhyNotRequest) -> Dict[str, Any]:
+    """
+    Grounded 'Why Not Drug X?' diagnostic agent.
+    Evaluates whether a drug was filtered as non-therapeutic, absent from graph,
+    or scores lower than top search hits using the trained SynergyGNN value function.
+    """
+    from why_not import analyze_why_not
+
+    disease_raw = request.disease.strip()
+    cell_line_raw = request.cell_line.strip()
+
+    canonical_cell_line = CELL_LINE_ALIAS_MAP.get(cell_line_raw.lower())
+    if not canonical_cell_line:
+        canonical_cell_line = cell_line_raw
+
+    result = analyze_why_not(
+        disease_name=disease_raw,
+        cell_line_name=canonical_cell_line,
+        question=request.question,
+        drug_x_raw=request.drug_x,
+        search_method=request.search_method or "beam",
+        heterodata=HETERODATA,
+        module=MODULE,
+        device=DEVICE,
+        drug_alias_map=DRUG_ALIAS_MAP,
+        drug_list=DRUG_LIST,
+        run_literature=True,
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------

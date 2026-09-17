@@ -22,6 +22,8 @@ import type {
   PredictionResult,
   SearchRequest,
   SearchResponse,
+  WhyNotRequest,
+  WhyNotResponse,
   CellLineRelevanceStatus,
   FaithfulnessStatus,
 } from '../types/api';
@@ -150,6 +152,20 @@ export async function searchCombinations(
   return fetchJson<SearchResponse>(`${API_BASE}/search`, {
     method: 'POST',
     body: JSON.stringify(payload),
+    signal,
+  });
+}
+
+/**
+ * Ask why a drug is missing, filtered, or ranked below top combinations.
+ */
+export async function askWhyNot(
+  request: WhyNotRequest,
+  signal?: AbortSignal
+): Promise<WhyNotResponse> {
+  return fetchJson<WhyNotResponse>(`${API_BASE}/why-not`, {
+    method: 'POST',
+    body: JSON.stringify(request),
     signal,
   });
 }
