@@ -87,7 +87,9 @@ const nodeTypes = {
 };
 
 export const KnowledgeGraphPage: React.FC = () => {
-  const [searchQuery, setSearchQuery] = useState('');
+  // Pre-populate with Cyclophosphamide so the page opens on the demo anchor drug's
+  // 1-hop neighborhood rather than an arbitrary full-graph slice.
+  const [searchQuery, setSearchQuery] = useState('Cyclophosphamide');
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(
     new Set(['drug', 'protein', 'pathway', 'disease'])
   );
@@ -128,6 +130,45 @@ export const KnowledgeGraphPage: React.FC = () => {
     });
   };
 
+  // ---------------------------------------------------------------------------
+  // Neighbourhood computation — when a search query is active, resolve the
+  // 1-hop neighborhood of all matching anchor nodes (anchor + immediate
+  // neighbors) capped at MAX_NEIGHBOURHOOD_NODES for readability.
+  // Returns null when search is empty (→ show full subgraph).
+  // ---------------------------------------------------------------------------
+  const MAX_NEIGHBOURHOOD_NODES = 25;
+
+  const neighbourhoodNodeIds = useMemo<Set<string> | null>(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return null; // no filter — show full graph
+
+    // Find all nodes whose name matches the query
+    const anchorIds = new Set<string>(
+      PRIME_KG_SUBGRAPH.nodes
+        .filter((n) => n.name.toLowerCase().includes(q))
+        .map((n) => n.id)
+    );
+    if (anchorIds.size === 0) return new Set(); // no match → empty graph
+
+    // Collect 1-hop neighbors via edge traversal
+    const neighbourhood = new Set<string>(anchorIds);
+    PRIME_KG_SUBGRAPH.edges.forEach((e) => {
+      if (anchorIds.has(e.source)) neighbourhood.add(e.target);
+      if (anchorIds.has(e.target)) neighbourhood.add(e.source);
+    });
+
+    // Cap at MAX_NEIGHBOURHOOD_NODES — keep anchors, then fill neighbors
+    if (neighbourhood.size > MAX_NEIGHBOURHOOD_NODES) {
+      const capped = new Set<string>(anchorIds);
+      for (const id of neighbourhood) {
+        if (capped.size >= MAX_NEIGHBOURHOOD_NODES) break;
+        capped.add(id);
+      }
+      return capped;
+    }
+    return neighbourhood;
+  }, [searchQuery]);
+
   // Filter and arrange nodes
   const { flowNodes, flowEdges } = useMemo(() => {
     // 1. Filter edges by selected relation
@@ -142,61 +183,89 @@ export const KnowledgeGraphPage: React.FC = () => {
       incidentNodeIds.add(e.target);
     });
 
-    const validNodes = PRIME_KG_SUBGRAPH.nodes.filter(
+    let validNodes = PRIME_KG_SUBGRAPH.nodes.filter(
       (n) => incidentNodeIds.has(n.id) && selectedTypes.has(n.type)
     );
 
+    // 3. When a search is active, restrict to 1-hop neighbourhood
+    if (neighbourhoodNodeIds !== null) {
+      validNodes = validNodes.filter((n) => neighbourhoodNodeIds.has(n.id));
+    }
+
     const validNodeIdSet = new Set(validNodes.map((n) => n.id));
 
-    // Refine edges so both endpoints are in validNodeIdSet
+    // Refine edges so both endpoints are in the visible node set
     const finalEdges = validEdges.filter(
       (e) => validNodeIdSet.has(e.source) && validNodeIdSet.has(e.target)
     );
 
-    // Circular / layered layout
-    const total = validNodes.length;
-    const radiusX = 420;
-    const radiusY = 260;
-    const centerX = 500;
-    const centerY = 320;
+    // Circular / layered layout — anchor drug placed at center
+    const q = searchQuery.trim().toLowerCase();
+    const anchorNodes = validNodes.filter((n) => q && n.name.toLowerCase().includes(q));
+    const peripheryNodes = validNodes.filter((n) => !anchorNodes.find((a) => a.id === n.id));
 
-    const nodesList: Node[] = validNodes.map((n, i) => {
+    // Place anchor(s) at center, periphery in orbit
+    const total = peripheryNodes.length;
+    const radiusX = 380;
+    const radiusY = 240;
+    const centerX = 500;
+    const centerY = 300;
+
+    const anchorFlow: Node[] = anchorNodes.map((n, i) => ({
+      id: n.id,
+      type: 'kgNode',
+      position: {
+        x: centerX + (anchorNodes.length > 1 ? (i - (anchorNodes.length - 1) / 2) * 220 : 0),
+        y: centerY,
+      },
+      data: { ...n, isHighlighted: true, isAnchor: true },
+    }));
+
+    const peripheryFlow: Node[] = peripheryNodes.map((n, i) => {
       const angle = (i / Math.max(1, total)) * 2 * Math.PI;
       const x = centerX + radiusX * Math.cos(angle);
       const y = centerY + radiusY * Math.sin(angle);
-
-      const isMatch =
-        searchQuery.trim() !== '' &&
-        n.name.toLowerCase().includes(searchQuery.toLowerCase());
-
       return {
         id: n.id,
         type: 'kgNode',
         position: { x, y },
         data: {
           ...n,
-          isHighlighted: isMatch || (selectedEntity && selectedEntity.id === n.id),
+          isHighlighted: selectedEntity ? selectedEntity.id === n.id : false,
         },
       };
     });
 
-    const edgesList: Edge[] = finalEdges.map((e, idx) => ({
-      id: `kg-edge-${idx}`,
-      source: e.source,
-      target: e.target,
-      type: 'default',
-      style: { stroke: '#94A3B8', strokeWidth: 1.2 },
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        width: 10,
-        height: 10,
-        color: '#94A3B8',
-      },
-      data: e,
-    }));
+    const nodesList: Node[] = [...anchorFlow, ...peripheryFlow];
+
+    const edgesList: Edge[] = finalEdges.map((e, idx) => {
+      const isAnchorEdge =
+        anchorNodes.some((a) => a.id === e.source || a.id === e.target);
+      return {
+        id: `kg-edge-${idx}`,
+        source: e.source,
+        target: e.target,
+        type: 'default',
+        style: {
+          stroke: isAnchorEdge ? '#0D9488' : '#94A3B8',
+          strokeWidth: isAnchorEdge ? 2 : 1.2,
+          opacity: isAnchorEdge ? 1 : 0.6,
+        },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 10,
+          height: 10,
+          color: isAnchorEdge ? '#0D9488' : '#94A3B8',
+        },
+        data: e,
+        label: e.relation.replace(/_/g, ' '),
+        labelStyle: { fontSize: 9, fill: '#64748B', fontFamily: 'monospace' },
+        labelBgStyle: { fill: '#F8FAFC', fillOpacity: 0.85 },
+      };
+    });
 
     return { flowNodes: nodesList, flowEdges: edgesList };
-  }, [selectedTypes, selectedRelations, searchQuery, selectedEntity]);
+  }, [selectedTypes, selectedRelations, searchQuery, selectedEntity, neighbourhoodNodeIds]);
 
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     const rawNode = PRIME_KG_SUBGRAPH.nodes.find((n) => n.id === node.id);
@@ -228,23 +297,30 @@ export const KnowledgeGraphPage: React.FC = () => {
         </div>
 
         {/* Search Bar */}
-        <div className="relative w-full sm:w-72">
+        <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-[#94A3B8] absolute inset-y-0 left-3 my-auto pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search entity (e.g. Temozolomide, MGMT)..."
+            placeholder="Search entity (e.g. Cyclophosphamide, MGMT)..."
             className="w-full pl-9 pr-8 py-2 bg-[#FFFFFF] border border-[#CBD5E1] focus:border-[#0D9488] rounded-md text-xs text-[#0F172A] outline-none"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
+              title="Clear search — shows full subgraph"
               className="absolute inset-y-0 right-2 my-auto text-[#94A3B8] hover:text-[#0F172A]"
             >
               <X className="w-3.5 h-3.5" />
             </button>
+          )}
+          {/* Neighbourhood mode badge */}
+          {searchQuery.trim() && (
+            <span className="absolute -bottom-5 left-0 text-[10px] font-mono text-[#0D9488]">
+              Showing 1-hop neighbourhood · clear to see full slice
+            </span>
           )}
         </div>
       </div>
@@ -356,13 +432,13 @@ export const KnowledgeGraphPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setSearchQuery('');
+                  setSearchQuery('Cyclophosphamide');
                   setSelectedTypes(new Set(['drug', 'protein', 'pathway', 'disease']));
                   setSelectedRelations(new Set(allRelations));
                 }}
                 className="px-3 py-1.5 bg-[#0D9488] hover:bg-[#0F766E] text-[#FFFFFF] rounded text-xs font-semibold cursor-pointer"
               >
-                Reset Search & Restore Full Slice
+                Reset to Default View
               </button>
             </div>
           )}
