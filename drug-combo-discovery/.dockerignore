@@ -1,0 +1,89 @@
+# =============================================================================
+# SynThera .dockerignore
+# Exclude everything except required runtime code and audited data/model assets
+# =============================================================================
+
+# Version control & IDE
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+
+# Virtual environments & local dependencies
+.venv/
+venv/
+env/
+ENV/
+
+# Secrets and environment variables (DO NOT BAKE SECRETS)
+.env
+.env.*
+*.env
+
+# Non-backend directories
+frontend/
+notebooks/
+scratch/
+tests/
+lightning_logs/
+
+# Python bytecode & cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation & workspace configs
+README.md
+*.md
+uv.toml
+
+# Streamlit demo (non-FastAPI)
+app/demo.py
+app/.gitkeep
+
+# Non-runtime src/ scripts (training, data prep, batch evaluation, inspection)
+src/train.py
+src/build_heterodata.py
+src/build_kg.py
+src/fetch_chemberta.py
+src/fetch_smiles.py
+src/join_labels.py
+src/calibrate_thresholds.py
+src/batch_faithfulness.py
+src/inspect_data.py
+src/sanity_check_batch.py
+src/env_check.py
+src/.gitkeep
+
+# Model checkpoints: exclude all EXCEPT synergy_gnn_final.ckpt
+models/*.ckpt
+!models/synergy_gnn_final.ckpt
+models/loss_curve.png
+models/.gitkeep
+
+# Raw data (entire directory)
+data/raw/
+data/.gitkeep
+
+# Processed data: exclude all training, raw graph, and intermediate assets
+data/processed/primekg_edges.csv
+data/processed/primekg_filtered.gpickle
+data/processed/drug_chemberta_embeddings.*
+data/processed/drug_smiles_fingerprints.csv
+data/processed/primekg_drugs.csv
+data/processed/split_*.csv
+data/processed/smiles_not_found.csv
+data/processed/unmatched_drugs.csv
+data/processed/*.gpickle
+data/processed/*.tsv
+data/processed/.gitkeep
+
+# OS-specific files
+.DS_Store
+Thumbs.db
