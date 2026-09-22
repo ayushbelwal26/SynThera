@@ -42,12 +42,12 @@ print(f"    Trainable params     : {n_params:,}")
 print(f"    cell_line_emb        : {tuple(model.cell_line_emb.weight.shape)}")
 print(f"    cell_line_proj       : {tuple(model.cell_line_proj.weight.shape)}")
 print(f"    drug_fp_proj (Linear): in={model.drug_fp_proj.in_features} -> out={model.drug_fp_proj.out_features}")
-assert model.drug_fp_proj.in_features == 768, \
-    f"FAIL: drug_fp_proj in_features {model.drug_fp_proj.in_features} != 768 (ChemBERTa)"
-print(f"    scorer[0] (Linear)   : in={model.scorer[0].in_features} = 3 x {HIDDEN_DIM}")
-assert model.scorer[0].in_features == HIDDEN_DIM * 3, \
-    f"FAIL: scorer input dim {model.scorer[0].in_features} != {HIDDEN_DIM*3}"
-print("    PASS: scorer input is 3 x hidden_dim (drug_a + drug_b + cell)")
+assert model.drug_fp_proj.in_features == 2048, \
+    f"FAIL: drug_fp_proj in_features {model.drug_fp_proj.in_features} != 2048 (Morgan)"
+print(f"    scorer[0] (Linear)   : in={model.scorer[0].in_features} = 5 x {HIDDEN_DIM}")
+assert model.scorer[0].in_features == HIDDEN_DIM * 5, \
+    f"FAIL: scorer input dim {model.scorer[0].in_features} != {HIDDEN_DIM*5}"
+print("    PASS: scorer input is 5 x hidden_dim (drug_a + drug_b + hadamard + diff_abs + cell)")
 
 # 3. Build loader + pull one batch
 NUM_NEIGHBORS = {

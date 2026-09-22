@@ -2,17 +2,21 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeftRight, Play, ArrowRight, Clock } from 'lucide-react';
 import { useApp } from '../services/AppContext';
-import { predictCombination, searchCombinations } from '../services/api';
-import type { Drug, PredictionResult, SearchResponse } from '../types/api';
+import { predictCombination, predictTripleCombination, searchCombinations, searchTripleCombinations } from '../services/api';
+import type { Drug, PredictionResult, SearchResponse, TripleResult, TripleSearchResponse } from '../types/api';
 import { DrugSelectInput } from '../components/discover/DrugSelectInput';
 import { CellLineDropdown } from '../components/discover/CellLineDropdown';
 import { BenchmarkPresets } from '../components/discover/BenchmarkPresets';
 import type { BenchmarkPreset } from '../components/discover/BenchmarkPresets';
 import { DiscoveryMode } from '../components/discover/DiscoveryMode';
+import { CompoundTripleMode } from '../components/discover/CompoundTripleMode';
+import { TripleDiscoveryMode } from '../components/discover/TripleDiscoveryMode';
+import { TripleResultCard } from '../components/discover/TripleResultCard';
 import { WhyNotSection } from '../components/discover/WhyNotSection';
 import { LoadingStages } from '../components/common/LoadingStages';
 import { AlertNotice } from '../components/common/AlertNotice';
 import { Badge } from '../components/common/Badge';
+import { ToxicityBadge } from '../components/common/ToxicityBadge';
 
 export const DiscoverPage: React.FC = () => {
   const navigate = useNavigate();
@@ -24,7 +28,7 @@ export const DiscoverPage: React.FC = () => {
     refreshCellLines,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'pair' | 'search'>('pair');
+  const [activeTab, setActiveTab] = useState<'pair' | 'triple-targeted' | 'search' | 'triple'>('pair');
 
   // Pair evaluation state
   const [drugA, setDrugA] = useState<Drug | null>(null);
@@ -40,6 +44,18 @@ export const DiscoverPage: React.FC = () => {
   const [searchDisease, setSearchDisease] = useState<string>('glioblastoma');
   const [searchResults, setSearchResults] = useState<SearchResponse | null>(null);
   const [inspectingPairIdx, setInspectingPairIdx] = useState<number | null>(null);
+
+  // Triple targeted prediction state (independent from pair & triple discovery)
+  const [targetedDrugA, setTargetedDrugA] = useState<Drug | null>(null);
+  const [targetedDrugB, setTargetedDrugB] = useState<Drug | null>(null);
+  const [targetedDrugC, setTargetedDrugC] = useState<Drug | null>(null);
+  const [targetedCellLine, setTargetedCellLine] = useState<string>('T98G');
+  const [targetedTripleResult, setTargetedTripleResult] = useState<TripleResult | null>(null);
+
+  // Triple combination discovery state (independent from pair search)
+  const [tripleDisease, setTripleDisease] = useState<string>('glioblastoma');
+  const [tripleCellLine, setTripleCellLine] = useState<string>('T98G');
+  const [tripleResults, setTripleResults] = useState<TripleSearchResponse | null>(null);
 
   const handleSwapDrugs = () => {
     const temp = drugA;
@@ -87,6 +103,39 @@ export const DiscoverPage: React.FC = () => {
     }
   };
 
+  const handleAnalyzeTargetedTriple = async () => {
+    if (!targetedDrugA || !targetedDrugB || !targetedDrugC || !targetedCellLine) {
+      setErrorMsg('Please select all three compounds (Compound A, Compound B, and Compound C) to execute analysis.');
+      return;
+    }
+    if (
+      targetedDrugA.id === targetedDrugB.id ||
+      targetedDrugA.id === targetedDrugC.id ||
+      targetedDrugB.id === targetedDrugC.id
+    ) {
+      setErrorMsg('Triple combination requires three distinct drugs. Please select three unique compounds.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+    setTargetedTripleResult(null);
+
+    try {
+      const res = await predictTripleCombination({
+        drug_a: targetedDrugA.id,
+        drug_b: targetedDrugB.id,
+        drug_c: targetedDrugC.id,
+        cell_line: targetedCellLine,
+      });
+      setTargetedTripleResult(res);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Targeted three-drug combination analysis failed.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleRunSearch = async (
     disease: string,
     targetCellLine: string,
@@ -114,6 +163,35 @@ export const DiscoverPage: React.FC = () => {
       setSearchResults(res);
     } catch (err: any) {
       setErrorMsg(err.message || 'Combination discovery failed. Please verify the indication name.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRunTripleSearch = async (
+    disease: string,
+    targetCellLine: string,
+    maxCandidates: number,
+    topK: number,
+    timeBudgetSec: number = 15.0
+  ) => {
+    setTripleDisease(disease);
+    setTripleCellLine(targetCellLine);
+    setIsLoading(true);
+    setErrorMsg(null);
+    setTripleResults(null);
+
+    try {
+      const res = await searchTripleCombinations({
+        disease,
+        cell_line: targetCellLine,
+        max_candidates: maxCandidates,
+        top_k: topK,
+        time_budget_sec: timeBudgetSec,
+      });
+      setTripleResults(res);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Three-drug combination discovery failed. Please verify the indication name.');
     } finally {
       setIsLoading(false);
     }
@@ -176,14 +254,14 @@ export const DiscoverPage: React.FC = () => {
       </div>
 
       {/* Mode Selector Tabs */}
-      <div className="flex border-b border-[#E5E5E0] gap-4">
+      <div className="flex border-b border-[#E5E5E0] gap-4 overflow-x-auto">
         <button
           type="button"
           onClick={() => {
             setActiveTab('pair');
             setErrorMsg(null);
           }}
-          className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+          className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'pair'
               ? 'border-[#0D9488] text-[#0D9488]'
               : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
@@ -194,16 +272,44 @@ export const DiscoverPage: React.FC = () => {
         <button
           type="button"
           onClick={() => {
+            setActiveTab('triple-targeted');
+            setErrorMsg(null);
+          }}
+          className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'triple-targeted'
+              ? 'border-[#0D9488] text-[#0D9488]'
+              : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
+          }`}
+        >
+          Compound Triple Analysis (Targeted)
+        </button>
+        <button
+          type="button"
+          onClick={() => {
             setActiveTab('search');
             setErrorMsg(null);
           }}
-          className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+          className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'search'
               ? 'border-[#0D9488] text-[#0D9488]'
               : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
           }`}
         >
           Unbiased Indication Search (Discovery)
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('triple');
+            setErrorMsg(null);
+          }}
+          className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'triple'
+              ? 'border-[#0D9488] text-[#0D9488]'
+              : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
+          }`}
+        >
+          Triple Combination Discovery (Composed)
         </button>
       </div>
 
@@ -217,10 +323,22 @@ export const DiscoverPage: React.FC = () => {
       {isLoading && (
         <div className="py-6">
           <LoadingStages
-            title={activeTab === 'pair' ? 'Evaluating Drug Combination' : 'Discovering Candidate Combinations'}
+            title={
+              activeTab === 'pair'
+                ? 'Evaluating Drug Combination'
+                : activeTab === 'triple-targeted'
+                ? 'Evaluating 3-Drug Combination'
+                : activeTab === 'triple'
+                ? 'Discovering 3-Drug Combinations'
+                : 'Discovering Candidate Combinations'
+            }
             subtitle={
               activeTab === 'pair'
                 ? `Running inference for ${drugA?.name || 'Drug A'} × ${drugB?.name || 'Drug B'} @ ${cellLine}`
+                : activeTab === 'triple-targeted'
+                ? `Composing pairwise GNN predictions for ${targetedDrugA?.name || 'Drug A'} + ${targetedDrugB?.name || 'Drug B'} + ${targetedDrugC?.name || 'Drug C'} @ ${targetedCellLine}`
+                : activeTab === 'triple'
+                ? `Composing pairwise GNN predictions for candidate triples (${tripleDisease} @ ${tripleCellLine})`
                 : 'Traversing PrimeKG indication neighbors and ranking candidate combinations'
             }
           />
@@ -344,6 +462,73 @@ export const DiscoverPage: React.FC = () => {
         </div>
       )}
 
+      {/* Tab: Targeted Triple Evaluation */}
+      {!isLoading && activeTab === 'triple-targeted' && (
+        <div className="space-y-6">
+          <div className="max-w-4xl">
+            <CompoundTripleMode
+              drugs={drugs}
+              cellLineStatus={cellLineStatus}
+              drugA={targetedDrugA}
+              drugB={targetedDrugB}
+              drugC={targetedDrugC}
+              cellLine={targetedCellLine}
+              onSelectDrugA={setTargetedDrugA}
+              onSelectDrugB={setTargetedDrugB}
+              onSelectDrugC={setTargetedDrugC}
+              onSelectCellLine={setTargetedCellLine}
+              onAnalyzeTriple={handleAnalyzeTargetedTriple}
+              isLoading={isLoading}
+            />
+          </div>
+
+          {/* Targeted Triple Result */}
+          {targetedTripleResult && (
+            <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-6 shadow-xs space-y-4 max-w-4xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E5E5E0] pb-3 gap-2">
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-[#0F172A]">
+                    Targeted 3-Drug Analysis Result
+                  </h3>
+                  <p className="text-xs text-[#64748B] font-mono mt-0.5">
+                    Context: {targetedCellLine} &bull; Limiting Bottleneck: {targetedTripleResult.bottleneck_pair.drug_1} × {targetedTripleResult.bottleneck_pair.drug_2} ({targetedTripleResult.bottleneck_pair.pair_key})
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-mono text-[#0D9488] bg-[#F0FDFA] border border-[#99F6E4] px-2.5 py-1 rounded font-semibold">
+                    Targeted Composed Triad
+                  </span>
+                </div>
+              </div>
+
+              {/* Technical Specifications & Disclaimers banner */}
+              <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded p-3 text-xs text-[#64748B] font-mono flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <span>AGGREGATE MIN: </span>
+                  <strong className="text-[#0F172A]">{targetedTripleResult.aggregate_min.toFixed(4)}</strong>
+                  <span className="mx-2">&bull;</span>
+                  <span>AGGREGATE MEAN: </span>
+                  <strong className="text-[#0F172A]">{targetedTripleResult.aggregate_mean.toFixed(4)}</strong>
+                  <span className="mx-2">&bull;</span>
+                  <span>TRIPLE TOXICITY: </span>
+                  <strong className="text-[#0F172A]">{targetedTripleResult.triple_toxicity_penalty.toFixed(4)}</strong>
+                </div>
+                <div className="italic text-[11px] text-[#0D9488] font-semibold">
+                  {targetedTripleResult.composition_caption}
+                </div>
+              </div>
+
+              {/* Render via existing unmodified TripleResultCard component */}
+              <TripleResultCard
+                triple={targetedTripleResult}
+                rank={1}
+                diseaseContext=""
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tab 2: Discovery Search Mode */}
       {!isLoading && activeTab === 'search' && (
         <div className="space-y-6">
@@ -417,9 +602,20 @@ export const DiscoverPage: React.FC = () => {
                         >
                           {pair.predicted_class}
                         </Badge>
-                        {pair.mcts_visits !== undefined && (
-                          <span className="text-[11px] font-mono text-[#0D9488] bg-[#F0FDFA] border border-[#CCFBF1] px-1.5 py-0.5 rounded font-medium">
-                            Visits: {pair.mcts_visits}
+                        <ToxicityBadge
+                          hasKnownDdi={pair.ranking?.breakdown?.has_known_ddi}
+                          unknownRiskApplied={pair.ranking?.breakdown?.unknown_risk_applied}
+                          sideEffectOverlap={pair.ranking?.breakdown?.side_effect_overlap}
+                          toxicityPenalty={pair.ranking?.toxicity_penalty}
+                          size="sm"
+                          showDetails={true}
+                        />
+                        {(pair.search_method === 'mcts' || searchResults?.search_method === 'mcts') && pair.mcts_visits !== undefined && (
+                          <span
+                            title="Number of MCTS search visits to this pair during tree exploration (algorithmic exploration count, not a biological score)"
+                            className="text-[10px] font-mono text-[#64748B] bg-[#F8FAFC] border border-[#E2E8F0] px-1.5 py-0.5 rounded"
+                          >
+                            visits: {pair.mcts_visits}
                           </span>
                         )}
                       </div>
@@ -436,12 +632,23 @@ export const DiscoverPage: React.FC = () => {
 
                     <div className="flex items-center gap-4 shrink-0 font-mono text-xs">
                       <div className="text-right">
-                        <span className="text-[10px] text-[#64748B] uppercase block">
-                          Calibrated Synergy
+                        <span className="text-[10px] text-[#64748B] uppercase block font-sans">
+                          Composite V(pair)
                         </span>
-                        <span className="font-bold text-sm text-[#059669]">
-                          {pair.score.toFixed(4)}
+                        <span className="font-bold text-sm text-[#0D9488]">
+                          {(pair.v_score ?? pair.ranking?.v_score ?? pair.score).toFixed(4)}
                         </span>
+                        <div className="text-[10px] text-[#64748B] flex items-center justify-end gap-1.5 mt-0.5 font-mono">
+                          <span>p(syn): <strong className="text-[#059669]">{(pair.p_synergy ?? pair.ranking?.p_synergy ?? pair.score).toFixed(4)}</strong></span>
+                          {pair.ranking?.toxicity_penalty !== undefined && pair.ranking?.toxicity_penalty !== null && (
+                            <>
+                              <span>&bull;</span>
+                              <span title={`Toxicity penalty: ${pair.ranking.toxicity_penalty.toFixed(4)}`}>
+                                tox: <strong className={pair.ranking.toxicity_penalty > 0.4 ? 'text-[#DC2626]' : 'text-[#D97706]'}>{pair.ranking.toxicity_penalty.toFixed(3)}</strong>
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                       <button
                         type="button"
@@ -475,6 +682,84 @@ export const DiscoverPage: React.FC = () => {
             searchMethod={(searchResults?.search_method as any) || 'beam'}
             onInspectPair={handleInspectWhyNotPair}
           />
+        </div>
+      )}
+
+      {/* Tab 3: Composed Three-Drug Discovery */}
+      {!isLoading && activeTab === 'triple' && (
+        <div className="space-y-6">
+          <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-6 shadow-xs max-w-3xl">
+            <TripleDiscoveryMode
+              cellLineStatus={cellLineStatus}
+              selectedCellLine={tripleCellLine}
+              onSelectCellLine={setTripleCellLine}
+              onRunTripleSearch={handleRunTripleSearch}
+              isLoading={isLoading}
+            />
+          </div>
+
+          {/* Triple Discovery Results */}
+          {tripleResults && (
+            <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-6 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E5E5E0] pb-3 gap-2">
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-[#0F172A]">
+                    Ranked 3-Drug Combinations for '{tripleResults.disease}'
+                  </h3>
+                  <p className="text-xs text-[#64748B] font-mono mt-0.5">
+                    Context: {tripleResults.cell_line} &bull; Candidate Pool: {tripleResults.candidate_pool_size} compounds
+                    {tripleResults.n_pairs_scored ? ` • Evaluated: ${tripleResults.n_pairs_scored} unique pairs` : ''}
+                    {tripleResults.n_triples_scored ? ` • Composed: ${tripleResults.n_triples_scored} triples` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-mono text-[#0D9488] bg-[#F0FDFA] border border-[#99F6E4] px-2.5 py-1 rounded font-semibold">
+                    Composed Pair Mode ({tripleResults.n_triples_scored} triples scored in {tripleResults.time_taken_sec.toFixed(2)}s)
+                  </span>
+                  {tripleResults.truncated && (
+                    <span className="text-xs font-mono text-[#B45309] bg-[#FFFBEB] border border-[#FDE68A] px-2.5 py-1 rounded font-semibold flex items-center gap-1">
+                      <span>⚠️</span> Time budget reached (truncated)
+                    </span>
+                  )}
+                  <span className="text-xs font-mono text-[#475569] bg-[#F1F5F9] border border-[#E2E8F0] px-2.5 py-1 rounded font-semibold">
+                    Top {tripleResults.results.length} Triples
+                  </span>
+                </div>
+              </div>
+
+              {/* Technical Specifications & Disclaimers banner matching instrument panel style */}
+              <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded p-3 text-xs text-[#64748B] font-mono flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <span>CANDIDATE POOL: </span>
+                  <strong className="text-[#0F172A]">{tripleResults.candidate_pool_size}</strong>
+                  <span className="mx-2">&bull;</span>
+                  <span>UNIQUE PAIRS: </span>
+                  <strong className="text-[#0F172A]">{tripleResults.n_pairs_scored}</strong>
+                  <span className="mx-2">&bull;</span>
+                  <span>TRIPLES COMPOSED: </span>
+                  <strong className="text-[#0F172A]">{tripleResults.n_triples_scored}</strong>
+                  <span className="mx-2">&bull;</span>
+                  <span>TIME: </span>
+                  <strong className="text-[#0F172A]">{tripleResults.time_taken_sec.toFixed(3)}s</strong>
+                </div>
+                <div className="italic text-[11px] text-[#0D9488] font-semibold">
+                  {tripleResults.composition_caption}
+                </div>
+              </div>
+
+              {/* Triples List */}
+              <div className="space-y-4">
+                {tripleResults.results.map((triple, idx) => (
+                  <TripleResultCard
+                    key={`${triple.drug_a}_${triple.drug_b}_${triple.drug_c}_${idx}`}
+                    triple={triple}
+                    rank={triple.rank ?? idx + 1}
+                    diseaseContext={tripleResults.disease}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

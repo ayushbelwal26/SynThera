@@ -1,0 +1,35 @@
+# Environment & Secrets
+.env
+.env.*
+*.env
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Build & Dist
+build/
+dist/
+dist-backend/
+
+# Model Weights & Data
+*.ckpt
+**/*.ckpt
+*.pt
+**/*.pt
+*.pth
+**/*.pth
+*.onnx
+**/*.onnx
+
+# Node / Frontend
+node_modules/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/

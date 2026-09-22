@@ -34,6 +34,7 @@ SynergyModule wraps SynergyGNN in a pl.LightningModule.
 
 from __future__ import annotations
 
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -45,6 +46,8 @@ from sklearn.metrics import (
     average_precision_score,
     confusion_matrix,
 )
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ─────────────────────────────────────────────────────────────────
 # Constants — single source of truth for all hyper-parameters
@@ -153,12 +156,16 @@ class SynergyGNN(nn.Module):
         hidden_dim: int = HIDDEN_DIM,
         num_heads: int  = NUM_HEADS,
         dropout: float  = DROPOUT,
+        enriched_pair_head: bool = False,
+        use_target_features: bool = False,
     ) -> None:
         super().__init__()
 
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.dropout    = nn.Dropout(dropout)
+        self.enriched_pair_head = enriched_pair_head
+        self.use_target_features = use_target_features
         node_types = metadata[0]
 
         # ── Drug: hybrid feature module ───────────────────────────
@@ -211,13 +218,30 @@ class SynergyGNN(nn.Module):
         nn.init.xavier_uniform_(self.cell_line_proj.weight)
 
         # ── Pair-scorer MLP ───────────────────────────────────────
-        # Input: cat(emb_A, emb_B, emb_cell)  ->  [3 * hidden_dim]
+        # Input: 5*hidden_dim (if enriched with hadamard + diff_abs) or 3*hidden_dim (baseline)
+        # Plus 4 if hand-crafted target-complementarity features are added (Run C)
+        extra_dim = 4 if use_target_features else 0
+        scorer_in_dim = hidden_dim * (5 if enriched_pair_head else 3) + extra_dim
         self.scorer = nn.Sequential(
-            nn.Linear(hidden_dim * 3, hidden_dim),
+            nn.Linear(scorer_in_dim, hidden_dim),
             nn.ELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, 3),       # 3 classes
         )
+
+        if use_target_features:
+            self._load_target_features_buffers()
+
+    def _load_target_features_buffers(self) -> None:
+        """Loads precomputed target complementarity lookup buffers for fast vectorized forward pass."""
+        lookup_pt = os.path.join(ROOT, "data", "processed", "target_complementarity_lookup.pt")
+        if os.path.exists(lookup_pt):
+            data = torch.load(lookup_pt, weights_only=False)
+            self.register_buffer("target_lookup_matrix", data["lookup_matrix"])
+            self.register_buffer("target_global_to_compact", data["global_to_compact"])
+            self.register_buffer("target_default_norm", data["default_norm"])
+        else:
+            print(f"  [WARNING] {lookup_pt} not found; target feature buffers not initialized.")
 
     # ─────────────────────────────────────────────────────────────
     # Forward helpers
@@ -260,14 +284,12 @@ class SynergyGNN(nn.Module):
                     device=fp_feats.device,
                 )
 
-                # FP path: project real 2048-bit fingerprints → 128 dims
+                # FP path: project real 2048-bit fingerprints → 128 dims (purely inductive)
                 if fp_mask.any():
                     out[fp_mask] = self.drug_fp_proj(fp_feats[fp_mask])
 
-                # Fallback path: look up batch-local fallback rows in the embedding table
-                if fb_mask.any():
-                    fb_row_indices = fallback_lookup[fb_mask]   # correct rows in Embedding(K, 128)
-                    out[fb_mask] = self.drug_fallback_emb(fb_row_indices.to(fp_feats.device))
+                # Trainable drug ID embeddings disabled in forward path to ensure strict induction.
+                # (100% of labeled pairs have Morgan FPs; any fallback node receives zeros).
 
                 x_dict[ntype] = self.dropout(out)
 
@@ -355,7 +377,28 @@ class SynergyGNN(nn.Module):
             )
         )                                             # [num_pairs, hidden_dim]
 
-        pair_emb   = torch.cat([emb_a, emb_b, emb_cell], dim=-1)  # [num_pairs, 3*hidden_dim]
+        # Pair representation: enriched (5*hidden_dim) or baseline (3*hidden_dim)
+        if self.enriched_pair_head:
+            hadamard   = emb_a * emb_b
+            diff_abs   = torch.abs(emb_a - emb_b)
+            pair_emb   = torch.cat([emb_a, emb_b, hadamard, diff_abs, emb_cell], dim=-1)
+        else:
+            pair_emb   = torch.cat([emb_a, emb_b, emb_cell], dim=-1)
+
+        # Run C: Hand-crafted target-complementarity features [num_pairs, 4]
+        if self.use_target_features and hasattr(self, "target_lookup_matrix"):
+            global_a = batch["drug"].n_id[src_local]
+            global_b = batch["drug"].n_id[dst_local]
+            compact_a = self.target_global_to_compact[global_a]
+            compact_b = self.target_global_to_compact[global_b]
+
+            valid_mask = (compact_a >= 0) & (compact_b >= 0)
+            target_feats = self.target_default_norm.unsqueeze(0).expand(src_local.size(0), -1).clone()
+            if valid_mask.any():
+                target_feats[valid_mask] = self.target_lookup_matrix[compact_a[valid_mask], compact_b[valid_mask]]
+
+            pair_emb = torch.cat([pair_emb, target_feats.to(pair_emb.device)], dim=-1)
+
         logits     = self.scorer(pair_emb)                          # [num_pairs, 3]
 
         return logits, labels
@@ -393,6 +436,8 @@ class SynergyModule(pl.LightningModule):
         hidden_dim: int      = HIDDEN_DIM,
         num_heads: int       = NUM_HEADS,
         dropout: float       = DROPOUT,
+        enriched_pair_head: bool = False,
+        use_target_features: bool = False,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(ignore=["class_weights"])
@@ -406,6 +451,8 @@ class SynergyModule(pl.LightningModule):
             hidden_dim         = hidden_dim,
             num_heads          = num_heads,
             dropout            = dropout,
+            enriched_pair_head = enriched_pair_head,
+            use_target_features = use_target_features,
         )
 
         # Register class weights as buffer (moves to GPU with the module)
@@ -417,6 +464,20 @@ class SynergyModule(pl.LightningModule):
         # Collectors for test-epoch metrics (cleared each test epoch)
         self._test_logits: list[torch.Tensor] = []
         self._test_labels: list[torch.Tensor] = []
+
+    def on_load_checkpoint(self, checkpoint: dict) -> None:
+        """Adapts scorer input dimension to checkpoint weight shape (384 baseline, 388 target_features, 640 enriched)."""
+        state_dict = checkpoint.get("state_dict", {})
+        weight = state_dict.get("model.scorer.0.weight")
+        if weight is not None and weight.shape[1] != self.model.scorer[0].in_features:
+            in_f = weight.shape[1]
+            is_enriched = (in_f in (self.model.hidden_dim * 5, self.model.hidden_dim * 5 + 4))
+            has_target = (in_f in (self.model.hidden_dim * 3 + 4, self.model.hidden_dim * 5 + 4))
+            self.model.enriched_pair_head = is_enriched
+            self.model.use_target_features = has_target
+            if has_target and not hasattr(self.model, "target_lookup_matrix"):
+                self.model._load_target_features_buffers()
+            self.model.scorer[0] = nn.Linear(in_f, self.model.hidden_dim, bias=True)
 
     # ─────────────────────────────────────────────────────────────
     # Forward

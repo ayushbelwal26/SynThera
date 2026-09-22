@@ -33,6 +33,7 @@ import os
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
+import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -54,6 +55,12 @@ from search import (
     get_full_explanations_for_top_k,
 )
 from cell_line_mapping import get_relevant_cell_lines, is_cancer_disease
+from ranking import (
+    compute_pair_score_v,
+    DEFAULT_W_SYNERGY,
+    DEFAULT_W_TOXICITY,
+    DEFAULT_W_REDUNDANCY,
+)
 
 # File paths
 CHECKPOINT_PATH = os.path.join(ROOT_DIR, "models", "synergy_gnn_final.ckpt")
@@ -69,6 +76,7 @@ DEVICE = "cpu"
 
 DRUG_LIST: List[Dict[str, str]] = []
 DRUG_ALIAS_MAP: Dict[str, str] = {}         # alias.lower() -> canonical DrugBank ID
+DRUG_ID_TO_NAME: Dict[str, str] = {}        # canonical DrugBank ID -> primary drug name
 CELL_LINE_LIST: List[str] = []
 CELL_LINE_ALIAS_MAP: Dict[str, str] = {}    # name.lower() -> canonical cell line name
 
@@ -78,7 +86,7 @@ PREDICTION_CACHE: Dict[Tuple[Tuple[str, str], str], Dict[str, Any]] = {}
 def _initialize_app_state():
     """Load model, heterodata, build alias maps, and prepare dropdown lists."""
     global MODULE, HETERODATA, DEVICE
-    global DRUG_LIST, DRUG_ALIAS_MAP, CELL_LINE_LIST, CELL_LINE_ALIAS_MAP
+    global DRUG_LIST, DRUG_ALIAS_MAP, DRUG_ID_TO_NAME, CELL_LINE_LIST, CELL_LINE_ALIAS_MAP
 
     print("=" * 65)
     print("  Initializing SynThera FastAPI Service...")
@@ -125,6 +133,7 @@ def _initialize_app_state():
     drugs.sort(key=lambda x: x["name"].lower())
     DRUG_LIST = drugs
     DRUG_ALIAS_MAP = drug_alias
+    DRUG_ID_TO_NAME = {d["id"]: d["name"] for d in drugs}
     print(f"  [init] Indexed {len(DRUG_LIST)} unique drugs with {len(DRUG_ALIAS_MAP)} alias keys.")
 
     # 4. Build cell line list and alias map
@@ -196,6 +205,9 @@ class SearchRequest(BaseModel):
     mcts_c: float = Field(1.414, description="UCT exploration constant balancing exploitation of high-scoring pairs vs exploration of unvisited branches (used when search_method='mcts')")
     time_budget_sec: float = Field(15.0, description="Hard wall-clock timeout in seconds for MCTS search (returns best pairs found so far if reached)")
     inspect_top_k: int = Field(0, description="Optional number of top hits (0-3) to run in-silico faithfulness ablation on")
+    w_synergy: Optional[float] = Field(None, description="Optional weight for synergy confidence (default: 1.0)")
+    w_toxicity: Optional[float] = Field(None, description="Optional penalty weight for adverse DDI and side effects (default: 0.35)")
+    w_redundancy: Optional[float] = Field(None, description="Optional penalty weight for target redundancy (default: 0.10)")
 
     model_config = {
         "json_schema_extra": {
@@ -210,6 +222,47 @@ class SearchRequest(BaseModel):
                 "mcts_c": 1.414,
                 "time_budget_sec": 15.0,
                 "inspect_top_k": 0,
+            }
+        }
+    }
+
+
+class TripleSearchRequest(BaseModel):
+    disease: str = Field(..., description="Target disease or indication name (e.g. 'glioblastoma')")
+    cell_line: str = Field(..., description="Target cell line context (e.g. 'T98G')")
+    max_candidates: Optional[int] = Field(10, description="Max candidate drugs to discover from PrimeKG (hard-capped at 20)")
+    top_k: Optional[int] = Field(5, description="Number of top-scoring candidate triples to return (1-20)")
+    time_budget_sec: Optional[float] = Field(15.0, description="Hard timeout cap in seconds")
+    w_synergy: Optional[float] = Field(None, description="Optional weight for synergy confidence (default: 1.0)")
+    w_toxicity: Optional[float] = Field(None, description="Optional penalty weight for adverse DDI and side effects (default: 0.35)")
+    w_redundancy: Optional[float] = Field(None, description="Optional penalty weight for target redundancy (default: 0.10)")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "disease": "glioblastoma",
+                "cell_line": "T98G",
+                "max_candidates": 10,
+                "top_k": 5,
+                "time_budget_sec": 15.0,
+            }
+        }
+    }
+
+
+class TriplePredictRequest(BaseModel):
+    drug_a: str = Field(..., description="First drug name or DrugBank ID (e.g. 'DB01168' or 'Procarbazine')")
+    drug_b: str = Field(..., description="Second drug name or DrugBank ID (e.g. 'DB00262' or 'Carmustine')")
+    drug_c: str = Field(..., description="Third drug name or DrugBank ID (e.g. 'DB00541' or 'Vincristine')")
+    cell_line: str = Field(..., description="Target cell line context (e.g. 'T98G')")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "drug_a": "Procarbazine",
+                "drug_b": "Carmustine",
+                "drug_c": "Vincristine",
+                "cell_line": "T98G",
             }
         }
     }
@@ -357,7 +410,13 @@ def predict(request: PredictRequest) -> Dict[str, Any]:
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
 
-    # 6. Store in cache
+    # 6. Attach multi-objective composite ranking breakdown
+    p_syn = result.get("p_synergy", 0.0)
+    ranking_data = compute_pair_score_v(drug_a_id, drug_b_id, p_synergy=p_syn)
+    result["ranking"] = ranking_data
+    result["v_score"] = ranking_data["v_score"]
+
+    # 7. Store in cache
     result["cached"] = False
     PREDICTION_CACHE[cache_key] = result
 
@@ -406,6 +465,10 @@ def search_combinations(request: SearchRequest) -> Dict[str, Any]:
         )
 
     # 3. Score Candidate Pairs using Beam/Greedy/MCTS Search
+    w_syn = request.w_synergy if request.w_synergy is not None else DEFAULT_W_SYNERGY
+    w_tox = request.w_toxicity if request.w_toxicity is not None else DEFAULT_W_TOXICITY
+    w_red = request.w_redundancy if request.w_redundancy is not None else DEFAULT_W_REDUNDANCY
+
     try:
         top_pairs, search_meta = beam_search_combinations(
             disease_name=disease_raw,
@@ -420,6 +483,9 @@ def search_combinations(request: SearchRequest) -> Dict[str, Any]:
             n_simulations=request.n_simulations,
             mcts_c=request.mcts_c,
             time_budget_sec=request.time_budget_sec,
+            w_synergy=w_syn,
+            w_toxicity=w_tox,
+            w_redundancy=w_red,
         )
     except Exception as e:
         raise HTTPException(
@@ -453,8 +519,201 @@ def search_combinations(request: SearchRequest) -> Dict[str, Any]:
         "n_simulations": search_meta.get("n_simulations"),
         "n_pairs_scored": search_meta.get("n_pairs_scored"),
         "truncated": search_meta.get("truncated", False),
+        "weights": search_meta.get("weights", {
+            "w_synergy": w_syn,
+            "w_toxicity": w_tox,
+            "w_redundancy": w_red,
+        }),
         "results": explanations,
     }
+
+
+@app.post("/search-triple", summary="Discover and Score Composed Three-Drug Combinations (Phase C1)")
+def search_triple(request: TripleSearchRequest) -> Dict[str, Any]:
+    """
+    Phase C1: Three-drug combination discovery mode as COMPOSED PAIR SCORES ONLY.
+    There is NO triple-synergy model and NO DrugComb 3-way labels.
+
+    Mandatory Disclaimer:
+        "We compose pair scores; we do not have DrugComb 3-way synergy labels."
+
+    Evaluates candidate triples by composing their three pairwise V(pair) scores (AB, AC, BC),
+    using bottleneck min(V_AB, V_AC, V_BC) as the primary ranking aggregate and max(Tox) as the
+    triple toxicity penalty.
+    """
+    disease_raw = request.disease.strip()
+    cell_line_raw = request.cell_line.strip()
+
+    # 1. Resolve Cell Line (case-insensitive)
+    canonical_cell_line = CELL_LINE_ALIAS_MAP.get(cell_line_raw.lower())
+    if not canonical_cell_line:
+        sample_cls = CELL_LINE_LIST[:8]
+        raise HTTPException(
+            status_code=404,
+            detail=f"Cell line '{cell_line_raw}' not found in knowledge graph. Available cell lines include: {sample_cls} (total {len(CELL_LINE_LIST)}).",
+        )
+
+    try:
+        from triple_search import search_triple_combinations, COMPOSITION_CAPTION
+    except ImportError:
+        from src.triple_search import search_triple_combinations, COMPOSITION_CAPTION
+
+    kwargs: Dict[str, Any] = {
+        "disease_name": disease_raw,
+        "cell_line_name": canonical_cell_line,
+        "heterodata": HETERODATA,
+        "module": MODULE,
+        "device": DEVICE,
+        "max_candidates": request.max_candidates or 10,
+        "top_k": request.top_k or 5,
+        "time_budget_sec": request.time_budget_sec or 15.0,
+    }
+    if request.w_synergy is not None:
+        kwargs["w_synergy"] = request.w_synergy
+    if request.w_toxicity is not None:
+        kwargs["w_toxicity"] = request.w_toxicity
+    if request.w_redundancy is not None:
+        kwargs["w_redundancy"] = request.w_redundancy
+
+    try:
+        results, metadata = search_triple_combinations(**kwargs)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error while scoring candidate triples: {str(e)}",
+        )
+
+    # Ensure the mandatory caption is explicitly guaranteed in the top-level response
+    metadata["composition_caption"] = COMPOSITION_CAPTION
+
+    return {
+        **metadata,
+        "results": results,
+    }
+
+
+@app.post("/predict-triple", summary="Targeted Analysis of a Specific Three-Drug Combination (Phase C1)")
+def predict_triple(request: TriplePredictRequest) -> Dict[str, Any]:
+    """
+    Phase C1: Targeted analysis of a user-specified three-drug combination.
+    Evaluates three specific named compounds directly (Compound A, Compound B, Compound C)
+    in a biological cell line context as COMPOSED PAIR SCORES ONLY.
+
+    Mandatory Disclaimer:
+        "We compose pair scores; we do not have DrugComb 3-way synergy labels."
+    """
+    drug_a_raw = request.drug_a.strip()
+    drug_b_raw = request.drug_b.strip()
+    drug_c_raw = request.drug_c.strip()
+    cell_line_raw = request.cell_line.strip()
+
+    # 1. Resolve Drug A (case-insensitive lookup on ID or Name)
+    drug_a_id = DRUG_ALIAS_MAP.get(drug_a_raw.lower())
+    if not drug_a_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Drug '{drug_a_raw}' (Drug A) not found in knowledge graph. Please check /drugs for available compounds.",
+        )
+
+    # 2. Resolve Drug B (case-insensitive lookup on ID or Name)
+    drug_b_id = DRUG_ALIAS_MAP.get(drug_b_raw.lower())
+    if not drug_b_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Drug '{drug_b_raw}' (Drug B) not found in knowledge graph. Please check /drugs for available compounds.",
+        )
+
+    # 3. Resolve Drug C (case-insensitive lookup on ID or Name)
+    drug_c_id = DRUG_ALIAS_MAP.get(drug_c_raw.lower())
+    if not drug_c_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Drug '{drug_c_raw}' (Drug C) not found in knowledge graph. Please check /drugs for available compounds.",
+        )
+
+    # Validate all three drugs are distinct
+    if len({drug_a_id, drug_b_id, drug_c_id}) < 3:
+        raise HTTPException(
+            status_code=400,
+            detail="Triple combination requires three distinct drugs. Please provide three unique compounds.",
+        )
+
+    # 4. Resolve Cell Line (case-insensitive lookup)
+    canonical_cell_line = CELL_LINE_ALIAS_MAP.get(cell_line_raw.lower())
+    if not canonical_cell_line:
+        sample_cls = CELL_LINE_LIST[:8]
+        raise HTTPException(
+            status_code=404,
+            detail=f"Cell line '{cell_line_raw}' not found in knowledge graph. Available cell lines include: {sample_cls} (total {len(CELL_LINE_LIST)}).",
+        )
+
+    drug_a_name = DRUG_ID_TO_NAME.get(drug_a_id, drug_a_raw)
+    drug_b_name = DRUG_ID_TO_NAME.get(drug_b_id, drug_b_raw)
+    drug_c_name = DRUG_ID_TO_NAME.get(drug_c_id, drug_c_raw)
+
+    def _score_pair(d1_id: str, d2_id: str, d1_name: str, d2_name: str) -> Dict[str, Any]:
+        cache_key = (tuple(sorted([d1_id, d2_id])), canonical_cell_line, "")
+        if cache_key in PREDICTION_CACHE:
+            cached = PREDICTION_CACHE[cache_key]
+            p_syn = cached.get("p_synergy", 0.0)
+            ranking = compute_pair_score_v(d1_id, d2_id, p_synergy=p_syn)
+            ranking["explanation_text"] = cached.get("explanation_text", "")
+            ranking["predicted_class"] = cached.get("predicted_class", "synergy")
+            return ranking
+
+        try:
+            torch.manual_seed(42)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(42)
+            pred = explain_prediction(
+                drug_a_id=d1_id,
+                drug_b_id=d2_id,
+                cell_line_name=canonical_cell_line,
+                module=MODULE,
+                heterodata=HETERODATA,
+                device=DEVICE,
+                run_faithfulness=False,
+                run_literature=False,
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Inference error while evaluating pair ({d1_name} × {d2_name}): {str(e)}",
+            )
+
+        if "error" in pred and pred["error"]:
+            raise HTTPException(status_code=400, detail=pred["error"])
+
+        p_syn = pred.get("p_synergy", 0.0)
+        ranking = compute_pair_score_v(d1_id, d2_id, p_synergy=p_syn)
+        ranking["explanation_text"] = pred.get("explanation_text", "")
+        ranking["predicted_class"] = pred.get("predicted_class", "synergy")
+
+        # Cache pair prediction for subsequent targeted pair queries
+        pred["ranking"] = ranking
+        pred["v_score"] = ranking["v_score"]
+        PREDICTION_CACHE[cache_key] = pred
+
+        return ranking
+
+    ranking_ab = _score_pair(drug_a_id, drug_b_id, drug_a_name, drug_b_name)
+    ranking_ac = _score_pair(drug_a_id, drug_c_id, drug_a_name, drug_c_name)
+    ranking_bc = _score_pair(drug_b_id, drug_c_id, drug_b_name, drug_c_name)
+
+    try:
+        from triple_search import compose_triple_result
+    except ImportError:
+        from src.triple_search import compose_triple_result
+
+    composed = compose_triple_result(
+        drug_a={"drug_id": drug_a_id, "drug_name": drug_a_name},
+        drug_b={"drug_id": drug_b_id, "drug_name": drug_b_name},
+        drug_c={"drug_id": drug_c_id, "drug_name": drug_c_name},
+        pair_ab=ranking_ab,
+        pair_ac=ranking_ac,
+        pair_bc=ranking_bc,
+    )
+    return composed
 
 
 @app.post("/why-not", summary="Ask Why a Drug is Missing, Filtered, or Ranked Below Top Combinations")

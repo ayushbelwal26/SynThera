@@ -1,6 +1,7 @@
 import { Download, Clock, Database, Share2 } from 'lucide-react';
 import type { PredictionResult } from '../../types/api';
 import { Badge } from '../common/Badge';
+import { ToxicityBadge } from '../common/ToxicityBadge';
 
 interface PredictionHeaderProps {
   prediction: PredictionResult;
@@ -52,6 +53,16 @@ Faithfulness: Necessity Delta: ${prediction.necessity_delta_pct ?? 'N/A'}% | Suf
             >
               {prediction.predicted_class}
             </Badge>
+
+            {prediction.ranking && (
+              <ToxicityBadge
+                hasKnownDdi={prediction.ranking.breakdown.has_known_ddi}
+                unknownRiskApplied={prediction.ranking.breakdown.unknown_risk_applied}
+                sideEffectOverlap={prediction.ranking.breakdown.side_effect_overlap}
+                toxicityPenalty={prediction.ranking.toxicity_penalty}
+                size="md"
+              />
+            )}
 
             {prediction.cached && (
               <span className="inline-flex items-center gap-1 font-mono text-[10px] text-[#64748B] bg-[#F1F5F9] border border-[#E2E8F0] px-2 py-0.5 rounded">

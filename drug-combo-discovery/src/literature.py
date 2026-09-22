@@ -761,3 +761,75 @@ def get_literature_for_explanation(
         explanation_text=explanation_text,
         max_citations=max_results,
     )
+
+
+def check_triple_literature(
+    drug_a: str,
+    drug_b: str,
+    drug_c: str,
+    disease_context: Optional[str] = None,
+    max_results: int = 3,
+) -> Optional[Dict[str, Any]]:
+    """
+    Check PubMed for published literature mentioning all three drugs co-occurring,
+    distinct from pairwise literature lookups.
+
+    Adheres strictly to rate limits: uses session pooling, local caching,
+    and returns a clean structured result.
+    Note: Per FUTURE_SCOPE.md section 5 ('never batch-PubMed'), this should only
+    be called on-demand for single inspected triples, not in batch search loops.
+    """
+    da = drug_a.strip()
+    db = drug_b.strip()
+    dc = drug_c.strip()
+    if not (da and db and dc):
+        return None
+
+    qa = f'"{da}"' if " " in da else da
+    qb = f'"{db}"' if " " in db else db
+    qc = f'"{dc}"' if " " in dc else dc
+
+    norm_dis = normalize_disease_name(disease_context)
+    if norm_dis:
+        qd = f'"{norm_dis}"' if " " in norm_dis else norm_dis
+        query = f"({qa} AND {qb} AND {qc}) AND ({qd})"
+    else:
+        query = f"({qa} AND {qb} AND {qc})"
+
+    cache_key = (da.lower(), db.lower(), dc.lower(), norm_dis.lower())
+    cached = _get_cached_literature(cache_key)
+    if cached is not None:
+        return cached
+
+    pmids = search_pubmed(query, max_results=max_results)
+    if not pmids and norm_dis:
+        # Fallback to pure 3-drug query without disease constraint
+        query = f"({qa} AND {qb} AND {qc})"
+        pmids = search_pubmed(query, max_results=max_results)
+
+    if not pmids:
+        res = {
+            "query_used": query,
+            "citations": [],
+            "count": 0,
+            "has_triple_literature": False,
+        }
+        _set_cached_literature(cache_key, res, is_success=False)
+        return res
+
+    citations_raw = fetch_pubmed_summaries(pmids)
+    citations = []
+    for c in citations_raw:
+        c["match_reason"] = f"Co-occurrence of {da}, {db}, and {dc} in publication"
+        c["evidence_type"] = "triple_combination"
+        citations.append(c)
+
+    res = {
+        "query_used": query,
+        "citations": citations,
+        "count": len(citations),
+        "has_triple_literature": len(citations) > 0,
+    }
+    _set_cached_literature(cache_key, res, is_success=True)
+    return res
+

@@ -4,6 +4,7 @@ import { Compass, Activity, History } from 'lucide-react';
 import { useApp } from '../services/AppContext';
 import { PredictionHeader } from '../components/analysis/PredictionHeader';
 import { ProbabilityVector } from '../components/analysis/ProbabilityVector';
+import { ToxicityCard } from '../components/analysis/ToxicityCard';
 import { PathwayGraph } from '../components/analysis/PathwayGraph';
 import { NodeDetailModal } from '../components/analysis/NodeDetailModal';
 import { FaithfulnessCard } from '../components/analysis/FaithfulnessCard';
@@ -106,7 +107,10 @@ export const AnalysisPage: React.FC = () => {
       {/* 2. Calibrated Probability Vector Bar */}
       <ProbabilityVector prediction={currentPrediction} />
 
-      {/* 3. Interactive Biological Pathway Attribution Map */}
+      {/* 3. Multi-Objective Value Function & Toxicity Breakdown (Phase B1/B2) */}
+      <ToxicityCard prediction={currentPrediction} />
+
+      {/* 4. Interactive Biological Pathway Attribution Map */}
       <PathwayGraph
         topEdges={currentPrediction.top_edges}
         drugAName={currentPrediction.drug_a_name}

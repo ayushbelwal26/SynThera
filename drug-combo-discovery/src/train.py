@@ -70,6 +70,7 @@ HETERODATA_PATH  = os.path.join(PROCESSED, "heterodata.pt")
 LABELS_PATH      = os.path.join(PROCESSED, "labeled_pairs.csv")
 SPLIT_TRAIN_PATH = os.path.join(PROCESSED, "split_train.csv")
 SPLIT_VAL_PATH   = os.path.join(PROCESSED, "split_val.csv")
+# Headline MUST use this cold-drug split; also report bilateral-subset AUROC/AUPR as the stricter inductive metric.
 SPLIT_TEST_PATH  = os.path.join(PROCESSED, "split_test.csv")
 LOSS_CURVE_PATH  = os.path.join(MODELS_DIR, "loss_curve.png")
 
@@ -275,21 +276,98 @@ def compute_class_weights(heterodata) -> torch.Tensor:
 
 
 # ─────────────────────────────────────────────────────────────────
+# Run B Regularized Module (Training Loop Only)
+# ─────────────────────────────────────────────────────────────────
+
+class RegularizedSynergyModule(SynergyModule):
+    """
+    Subclass of SynergyModule for Run B drug-level regularization during training:
+    1. Fingerprint bit dropout: randomly zero out 10% of each drug's 2048-bit Morgan FP bits
+       before projection, resampled every batch. Off at eval/inference.
+    2. Drug-edge masking: for a random 15% of drugs in each training batch, drop a random
+       half of that drug's non-drug-drug graph edges (target/indication edges) before message passing,
+       resampled every batch. Off at eval/inference.
+    Architecture, head (384-dim simple concat), and forward pass remain identical to baseline.
+    """
+    def __init__(
+        self,
+        *args,
+        fp_dropout: float = 0.10,
+        drug_mask_frac: float = 0.15,
+        edge_drop_frac: float = 0.50,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.fp_dropout = fp_dropout
+        self.drug_mask_frac = drug_mask_frac
+        self.edge_drop_frac = edge_drop_frac
+
+    def training_step(self, batch, batch_idx):
+        # 1. Fingerprint bit dropout: randomly zero out 10% of each drug's 2048-bit Morgan FP bits
+        if self.fp_dropout > 0 and hasattr(batch["drug"], "x") and batch["drug"].x is not None:
+            bit_keep_mask = (torch.rand_like(batch["drug"].x) >= self.fp_dropout).float()
+            batch["drug"].x = batch["drug"].x * bit_keep_mask
+
+        # 2. Drug-edge masking: for random 15% of drugs, drop a random half of non-drug-drug edges
+        if self.drug_mask_frac > 0 and self.edge_drop_frac > 0:
+            n_drugs = batch["drug"].num_nodes
+            dev = batch["drug"].x.device if hasattr(batch["drug"], "x") and batch["drug"].x is not None else None
+            is_selected_drugs = torch.rand(n_drugs, device=dev) < self.drug_mask_frac
+
+            for etype in batch.edge_types:
+                src_type, rel, dst_type = etype
+                # non-drug-drug graph edges involving drug (target / indication / disease edges)
+                if src_type == "drug" and dst_type != "drug":
+                    drug_idx = batch[etype].edge_index[0]
+                elif dst_type == "drug" and src_type != "drug":
+                    drug_idx = batch[etype].edge_index[1]
+                else:
+                    continue
+
+                orig_edges = batch[etype].edge_index.size(1)
+                if orig_edges == 0:
+                    continue
+                selected_edges = is_selected_drugs[drug_idx]
+                drop_mask = selected_edges & (torch.rand(orig_edges, device=batch[etype].edge_index.device) < self.edge_drop_frac)
+                batch[etype].edge_index = batch[etype].edge_index[:, ~drop_mask]
+
+        return super().training_step(batch, batch_idx)
+
+
+# ─────────────────────────────────────────────────────────────────
 # Main training routine
 # ─────────────────────────────────────────────────────────────────
 
-def main() -> None:
+def main(
+    run_name: str = "synergy_gnn_runA",
+    seed: int = SEED,
+    save_all_epochs: bool = False,
+    checkpoint_dir: str = MODELS_DIR,
+    use_regularization: bool = False,
+    use_target_features: bool = False,
+    fp_dropout: float = 0.10,
+    drug_mask_frac: float = 0.15,
+    edge_drop_frac: float = 0.50,
+) -> tuple[str, float]:
     if hasattr(sys.stdout, "reconfigure"):
         try:
             sys.stdout.reconfigure(encoding="utf-8")
         except Exception:
             pass
 
-    pl.seed_everything(SEED, workers=True)
-    os.makedirs(MODELS_DIR, exist_ok=True)
+    # If run_name starts with runB or flags set, enable regularization
+    if "runB" in run_name or "run_b" in run_name.lower():
+        use_regularization = True
+    if "runC" in run_name or "run_c" in run_name.lower():
+        use_target_features = True
+
+    pl.seed_everything(seed, workers=True)
+    os.makedirs(checkpoint_dir, exist_ok=True)
     warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
-    _sep("SynergyGNN — Drug Combination Discovery Training")
+    reg_desc = f" (Regularized Run B: fp_drop={fp_dropout}, drug_mask={drug_mask_frac}, edge_drop={edge_drop_frac})" if use_regularization else ""
+    target_desc = " (Target Features Run C active: 4 hand-crafted PPI features)" if use_target_features else ""
+    _sep(f"SynergyGNN — Training ({run_name}, seed={seed}){reg_desc}{target_desc}")
     t_total = time.time()
 
     # ── 1. Load data ──────────────────────────────────────────────
@@ -316,7 +394,14 @@ def main() -> None:
     print(f"  Metadata: {len(metadata[0])} node types, {len(metadata[1])} edge types")
     print(f"  Node counts: {num_nodes_dict}")
 
-    model = SynergyModule(
+    module_cls = RegularizedSynergyModule if use_regularization else SynergyModule
+    extra_kwargs = (
+        dict(fp_dropout=fp_dropout, drug_mask_frac=drug_mask_frac, edge_drop_frac=edge_drop_frac)
+        if use_regularization
+        else {}
+    )
+
+    model = module_cls(
         metadata           = metadata,
         num_nodes_dict     = num_nodes_dict,
         num_fallback_drugs = int((~heterodata["drug"].fp_mask).sum().item()),
@@ -325,13 +410,19 @@ def main() -> None:
         lr                 = LR,
         weight_decay       = WEIGHT_DECAY,
         max_epochs         = MAX_EPOCHS,
+        enriched_pair_head = False,  # keep baseline architecture (384-dim simple concat)
+        use_target_features = use_target_features,
+        **extra_kwargs,
     )
 
     n_fp       = int(heterodata["drug"].fp_mask.sum().item())
     n_fallback = heterodata["drug"].num_nodes - n_fp
-    print(f"  Drug embedded nodes: {n_fp:,}  (ChemBERTa -> Linear(768->128))")
-    print(f"  Drug fallback nodes: {n_fallback:,}  (biologic, learnable Embedding)")
+    print(f"  Drug embedded nodes: {n_fp:,}  (Morgan FP 2048 -> Linear(2048->128))")
+    print(f"  Drug fallback nodes: {n_fallback:,}  (trainable ID emb disabled in forward pass)")
     print(f"  Cell lines         : {heterodata.num_cell_lines}  (learnable Embedding(N, 64) -> scorer)")
+    if use_regularization:
+        print(f"  [Run B Active] Drug FP bit dropout: {fp_dropout:.0%}")
+        print(f"  [Run B Active] Drug edge masking  : {drug_mask_frac:.0%} drugs, {edge_drop_frac:.0%} non-drug edges dropped")
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"  Trainable parameters: {n_params:,}")
@@ -346,20 +437,31 @@ def main() -> None:
         verbose   = True,
     )
 
-    checkpoint_cb = ModelCheckpoint(
-        dirpath          = MODELS_DIR,
-        filename         = "synergy_gnn_best",
-        monitor          = "val_loss",
-        save_top_k       = 1,
-        mode             = "min",
-        save_last        = True,
-        verbose          = True,
-    )
+    if save_all_epochs:
+        checkpoint_cb = ModelCheckpoint(
+            dirpath          = checkpoint_dir,
+            filename         = f"seed{seed}_epoch{{epoch}}",
+            monitor          = "val_loss",
+            save_top_k       = -1,   # save every epoch
+            save_last        = False,
+            verbose          = True,
+        )
+    else:
+        checkpoint_cb = ModelCheckpoint(
+            dirpath          = checkpoint_dir,
+            filename         = run_name,
+            monitor          = "val_loss",
+            save_top_k       = 1,
+            mode             = "min",
+            save_last        = True,
+            verbose          = True,
+        )
 
     lr_monitor_cb = LearningRateMonitor(logging_interval="epoch")
 
     # ── 6. Trainer ────────────────────────────────────────────────
     _sep("Training")
+    print(f"  run_name     = {run_name}")
     print(f"  batch_size   = {BATCH_SIZE}")
     print(f"  max_epochs   = {MAX_EPOCHS}")
     print(f"  early_stop   = {ES_PATIENCE} epochs patience on val_loss")
@@ -398,14 +500,35 @@ def main() -> None:
             raise
         raise
 
+    # Normalize checkpoint names if save_all_epochs is active
+    if save_all_epochs:
+        import glob
+        for f in glob.glob(os.path.join(checkpoint_dir, f"seed{seed}_*.ckpt")):
+            new_f = f.replace("epochepoch=", "epoch").replace("epoch=", "epoch")
+            if new_f != f:
+                try:
+                    os.replace(f, new_f)
+                except Exception:
+                    pass
+
     # ── 7. Loss curve ─────────────────────────────────────────────
     loss_curve_cb.save_plot(LOSS_CURVE_PATH)
 
     # ── 8. Test evaluation ────────────────────────────────────────
     _sep("Test Evaluation — loading best checkpoint")
     best_ckpt = checkpoint_cb.best_model_path
+    if save_all_epochs and best_ckpt:
+        best_ckpt = best_ckpt.replace("epochepoch=", "epoch").replace("epoch=", "epoch")
     print(f"  Best checkpoint : {best_ckpt}")
     print(f"  Best val_loss   : {checkpoint_cb.best_model_score:.4f}")
+
+    # Copy to target checkpoint path e.g. models/synergy_gnn_runA.ckpt (if not save_all_epochs)
+    if not save_all_epochs:
+        target_ckpt = os.path.join(checkpoint_dir, f"{run_name}.ckpt")
+        if os.path.exists(best_ckpt) and os.path.abspath(best_ckpt) != os.path.abspath(target_ckpt):
+            import shutil
+            shutil.copy2(best_ckpt, target_ckpt)
+            print(f"  Saved run checkpoint: {target_ckpt}")
 
     best_model = SynergyModule.load_from_checkpoint(
         best_ckpt,
@@ -418,6 +541,7 @@ def main() -> None:
 
     trainer.test(best_model, test_loader)
 
+    wall_clock = time.time() - t_total
     _sep("Done")
     print(f"  Total wall-clock time : {_elapsed(t_total)}")
     print(f"\n  Artifacts saved to {MODELS_DIR}/:")
@@ -427,6 +551,62 @@ def main() -> None:
             size_mb = os.path.getsize(fpath) / 1e6
             print(f"    {fname:<40}  {size_mb:>7.2f} MB")
 
+    saved_path = target_ckpt if not save_all_epochs else best_ckpt
+    return saved_path, wall_clock
+
+
+
+# ─────────────────────────────────────────────────────────────────
+# Test split subset evaluation helper
+# ─────────────────────────────────────────────────────────────────
+def evaluate_split_subsets(
+    ckpt_path: str = os.path.join(MODELS_DIR, "synergy_gnn_final.ckpt"),
+    heterodata_path: str = HETERODATA_PATH,
+):
+    """
+    Evaluates test set predictions across:
+      1. Full cold-drug test (headline)
+      2. Bilateral cold-drug test (strictest subset: neither drug in train)
+      3. Unilateral cold-drug test (exactly one drug in train)
+    """
+    from eval_splits import evaluate_cold_split_subsets
+    return evaluate_cold_split_subsets(ckpt_path=ckpt_path, heterodata_path=heterodata_path)
+
 
 if __name__ == "__main__":
-    main()
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print("Usage: python src/train.py [--run-name NAME] [--seed INT] [--eval-subsets] [--use-regularization]")
+        print("  --run-name NAME       : Name for checkpoint (default: synergy_gnn_runA)")
+        print("  --seed INT            : Random seed for training (default: 42)")
+        print("  --use-regularization  : Enable Run B drug-level regularization")
+        print("  --eval-subsets        : Evaluate checkpoint across full test, bilateral, and unilateral subsets")
+        sys.exit(0)
+    elif "--eval-subsets" in sys.argv:
+        ckpt_arg = None
+        for i, a in enumerate(sys.argv):
+            if a == "--ckpt" and i + 1 < len(sys.argv):
+                ckpt_arg = sys.argv[i + 1]
+        evaluate_split_subsets(ckpt_path=ckpt_arg) if ckpt_arg else evaluate_split_subsets()
+    else:
+        run_name = "synergy_gnn_runA"
+        seed = SEED
+        save_all = "--save-all-epochs" in sys.argv
+        ckpt_dir = MODELS_DIR
+        use_reg = "--use-regularization" in sys.argv or "--run-B" in sys.argv
+        use_target = "--use-target-features" in sys.argv or "--run-C" in sys.argv
+        for i, a in enumerate(sys.argv):
+            if a == "--run-name" and i + 1 < len(sys.argv):
+                run_name = sys.argv[i + 1]
+            if a == "--seed" and i + 1 < len(sys.argv):
+                seed = int(sys.argv[i + 1])
+            if a == "--checkpoint-dir" and i + 1 < len(sys.argv):
+                ckpt_dir = sys.argv[i + 1]
+        main(
+            run_name=run_name,
+            seed=seed,
+            save_all_epochs=save_all,
+            checkpoint_dir=ckpt_dir,
+            use_regularization=use_reg,
+            use_target_features=use_target,
+        )
+

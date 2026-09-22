@@ -1,9 +1,0 @@
-{
-  "disease": "glioblastoma",
-  "cell_line": "T98G",
-  "max_candidates": 15,
-  "top_k": 3,
-  "search_method": "beam",
-  "beam_width": 5,
-  "inspect_top_k": 0
-}

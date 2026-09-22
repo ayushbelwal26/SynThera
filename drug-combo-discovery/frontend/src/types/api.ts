@@ -62,6 +62,43 @@ export interface FaithfulnessResult {
   error?: string | null;
 }
 
+export interface SourceCoverage {
+  sider: boolean;
+  primekg_ddi: boolean;
+  drugbank_warnings: boolean;
+}
+
+export interface RankingWeights {
+  w_synergy: number;
+  w_toxicity: number;
+  w_redundancy: number;
+  alpha_ddi?: number;
+  alpha_se?: number;
+}
+
+export interface ToxicityBreakdown {
+  has_known_ddi: boolean | null;
+  side_effect_overlap: number | null;
+  shared_side_effects_count?: number | null;
+  top_shared_side_effects?: string[] | null;
+  ddi_risk: number;
+  se_risk: number;
+  unknown_risk_applied: boolean;
+  source_coverage: SourceCoverage;
+  redundancy_available: boolean;
+  redundancy_note?: string | null;
+}
+
+export interface RankingBlock {
+  v_score: number;
+  score: number;             // same as v_score, kept for back-compat
+  p_synergy: number;
+  toxicity_penalty: number;
+  redundancy_penalty: number | null;
+  weights: RankingWeights;
+  breakdown: ToxicityBreakdown;
+}
+
 export interface PredictionResult {
   drug_a: string;
   drug_a_name: string;
@@ -69,7 +106,7 @@ export interface PredictionResult {
   drug_b_name: string;
   cell_line: string;
   predicted_class: 'synergy' | 'additive' | 'antagonism' | string;
-  score: number;             // calibrated p_synergy
+  score: number;             // calibrated p_synergy or composite v_score depending on search/predict
   p_antagonism: number;
   p_additive: number;
   p_synergy: number;
@@ -85,6 +122,10 @@ export interface PredictionResult {
   sufficiency_class_preserved?: boolean;
   sufficiency_prob?: number;
   
+  // Phase B Multi-Objective Value Function & Toxicity Ranking
+  ranking?: RankingBlock | null;
+  v_score?: number;
+
   rank?: number;
   search_method?: string;
   mcts_visits?: number;
@@ -125,7 +166,74 @@ export interface SearchResponse {
   n_simulations?: number;
   n_pairs_scored?: number;
   truncated?: boolean;
+  weights?: RankingWeights;
   results: PredictionResult[];
+}
+
+export interface TripleBottleneckPair {
+  pair_key: string;
+  drug_1: string;
+  drug_2: string;
+  v_score: number;
+  p_synergy: number;
+  toxicity_penalty: number;
+}
+
+export interface TripleResult {
+  drug_a: string;
+  drug_a_name: string;
+  drug_b: string;
+  drug_b_name: string;
+  drug_c: string;
+  drug_c_name: string;
+  aggregate_min: number;
+  aggregate_mean: number;
+  score: number;
+  v_score: number;
+  triple_toxicity_penalty: number;
+  has_known_ddi: boolean | null;
+  bottleneck_pair: TripleBottleneckPair;
+  pair_ab: RankingBlock;
+  pair_ac: RankingBlock;
+  pair_bc: RankingBlock;
+  literature_all_three?: null | {
+    query_used: string;
+    citations: LiteratureCitation[];
+    count: number;
+    has_triple_literature: boolean;
+  };
+  composition_caption: string;
+  rank?: number;
+}
+
+export interface TriplePredictRequest {
+  drug_a: string;
+  drug_b: string;
+  drug_c: string;
+  cell_line: string;
+}
+
+export interface TripleSearchRequest {
+  disease: string;
+  cell_line: string;
+  max_candidates?: number;
+  top_k?: number;
+  time_budget_sec?: number;
+  w_synergy?: number;
+  w_toxicity?: number;
+  w_redundancy?: number;
+}
+
+export interface TripleSearchResponse {
+  disease: string;
+  cell_line: string;
+  candidate_pool_size: number;
+  n_triples_scored: number;
+  n_pairs_scored: number;
+  truncated: boolean;
+  time_taken_sec: number;
+  composition_caption: string;
+  results: TripleResult[];
 }
 
 export interface WhyNotRequest {

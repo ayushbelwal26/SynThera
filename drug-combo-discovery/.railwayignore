@@ -1,0 +1,67 @@
+# =============================================================================
+# SynThera .railwayignore
+# Excludes non-runtime datasets, training checkpoints, venvs, and frontend
+# from Railway CLI upload while preserving the 5 required model/data assets.
+# =============================================================================
+
+# Version control, IDE, and virtual environments
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+.venv/
+venv/
+env/
+ENV/
+
+# Secrets and environment configurations
+.env
+.env.*
+*.env
+
+# Frontend (Frontend is deployed separately to Vercel/Cloudflare)
+frontend/
+
+# Python bytecode, cache, and testing artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Development notebooks and scratch test files
+notebooks/
+scratch/
+tests/
+lightning_logs/
+
+# Raw datasets (~1 GB)
+data/raw/
+data/.gitkeep
+
+# Processed data: exclude heavy training/graph dumps, KEEP required runtime files
+data/processed/primekg_edges.csv
+data/processed/primekg_filtered.gpickle
+data/processed/drug_chemberta_embeddings.*
+data/processed/drug_smiles_fingerprints.csv
+data/processed/primekg_drugs.csv
+data/processed/split_*.csv
+data/processed/smiles_not_found.csv
+data/processed/unmatched_drugs.csv
+data/processed/*.gpickle
+data/processed/*.tsv
+data/processed/.gitkeep
+
+# Model checkpoints: exclude all training checkpoints, KEEP synergy_gnn_final.ckpt
+models/last*.ckpt
+models/synergy_gnn_best*.ckpt
+models/loss_curve.png
+models/.gitkeep
+
+# OS artifacts
+.DS_Store
+Thumbs.db

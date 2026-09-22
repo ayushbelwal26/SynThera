@@ -64,8 +64,8 @@ USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH
 
-# Expose port (Hugging Face Spaces default is 7860)
+# Expose port (default 7860; Railway dynamically routes via $PORT)
 EXPOSE 7860
 
-# Start FastAPI application via Uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]
+# Start FastAPI application via Uvicorn with dynamic $PORT support (defaults to 7860)
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860}"]

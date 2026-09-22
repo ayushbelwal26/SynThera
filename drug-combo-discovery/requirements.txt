@@ -7,7 +7,6 @@ scikit-learn
 pytorch-lightning
 fastapi
 uvicorn
-streamlit
 networkx
 pyvis
 matplotlib

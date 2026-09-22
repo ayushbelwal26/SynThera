@@ -271,7 +271,7 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
             <input
               type="range"
               min={3}
-              max={10}
+              max={20}
               step={1}
               value={topK}
               disabled={isLoading}

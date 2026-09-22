@@ -31,6 +31,22 @@ from torch_geometric.loader import LinkNeighborLoader
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("search")
 
+# Multi-objective composite ranking V(pair)
+try:
+    from ranking import (
+        compute_pair_score_v,
+        DEFAULT_W_SYNERGY,
+        DEFAULT_W_TOXICITY,
+        DEFAULT_W_REDUNDANCY,
+    )
+except ImportError:
+    from src.ranking import (
+        compute_pair_score_v,
+        DEFAULT_W_SYNERGY,
+        DEFAULT_W_TOXICITY,
+        DEFAULT_W_REDUNDANCY,
+    )
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROCESSED = os.path.join(ROOT, "data", "processed")
 DEFAULT_HETERODATA = os.path.join(PROCESSED, "heterodata.pt")
@@ -487,10 +503,14 @@ def mcts_search_combinations(
     time_budget_sec: float = 15.0,
     top_k: int = 5,
     seed_drug_id: Optional[str] = None,
+    w_synergy: float = DEFAULT_W_SYNERGY,
+    w_toxicity: float = DEFAULT_W_TOXICITY,
+    w_redundancy: float = DEFAULT_W_REDUNDANCY,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Search candidate drug combinations using Monte Carlo Tree Search (MCTS) with UCT
-    over depth-2 combination pairs, using the trained SynergyGNN as the terminal value function.
+    over depth-2 combination pairs, using the composite multi-objective function V(pair)
+    as the terminal value function.
 
     MCTS Formulation:
     - Root (Depth 0): Uninitialized combination state.
@@ -498,8 +518,8 @@ def mcts_search_combinations(
     - Depth 2: Selection of partner drug d_b (d_b != d_a) from candidate pool.
     - Terminal State: Candidate pair (d_a, d_b).
     - Evaluation: Scored with trained SynergyGNN model (cached so each unique pair is scored at most once).
-    - Value Function: v = p_synergy in [0, 1].
-    - UCT Selection: Balances exploitation (average synergy score) and exploration (c * sqrt(ln(N_parent) / N_child)).
+    - Value Function: v = V(pair) = w_synergy * p_synergy - w_toxicity * toxicity_penalty - w_redundancy * redundancy_penalty.
+    - UCT Selection: Balances exploitation (average V(pair)) and exploration (c * sqrt(ln(N_parent) / N_child)).
     - Guardrails: Strict wall-clock timeout (time_budget_sec, default 15s) sets truncated=true if hit.
     """
     sys.path.insert(0, os.path.join(ROOT, "src"))
@@ -706,9 +726,19 @@ def mcts_search_combinations(
             cache_hits += 1
         else:
             eval_res = score_single_pair(d_a, d_b)
+            ranking_info = compute_pair_score_v(
+                d_a,
+                d_b,
+                p_synergy=eval_res["p_synergy"],
+                w_synergy=w_synergy,
+                w_toxicity=w_toxicity,
+                w_redundancy=w_redundancy,
+            )
+            eval_res["ranking"] = ranking_info
+            eval_res["v_score"] = ranking_info["v_score"]
             pair_cache[pair_key] = eval_res
 
-        v = eval_res["p_synergy"]
+        v = eval_res.get("v_score", eval_res["p_synergy"])
 
         # 3. Backpropagation
         node = curr
@@ -734,9 +764,14 @@ def mcts_search_combinations(
         "mcts_c": mcts_c,
         "cache_hits": cache_hits,
         "max_candidates_scored": n_pairs_scored,
+        "weights": {
+            "w_synergy": w_synergy,
+            "w_toxicity": w_toxicity,
+            "w_redundancy": w_redundancy,
+        },
     }
 
-    # 4. Compile and rank candidates strictly by GNN score
+    # 4. Compile and rank candidates strictly by composite score V(pair)
     scored_pairs: List[Dict[str, Any]] = []
     for pair_key, eval_res in pair_cache.items():
         da_id, db_id = pair_key
@@ -745,6 +780,18 @@ def mcts_search_combinations(
         p_syn = eval_res["p_synergy"]
         p_add = eval_res["p_additive"]
         p_ant = eval_res["p_antagonism"]
+
+        ranking_info = eval_res.get("ranking")
+        if not ranking_info:
+            ranking_info = compute_pair_score_v(
+                da_id,
+                db_id,
+                p_synergy=p_syn,
+                w_synergy=w_synergy,
+                w_toxicity=w_toxicity,
+                w_redundancy=w_redundancy,
+            )
+        v_score = ranking_info["v_score"]
 
         is_speculative = (ca["match_type"] == "target_overlap" or cb["match_type"] == "target_overlap")
         high_confidence_caveat = bool(p_syn > _HIGH_CONFIDENCE_THRESHOLD and is_speculative)
@@ -756,10 +803,12 @@ def mcts_search_combinations(
             "drug_b_name": cb["drug_name"],
             "drug_a_match_type": ca["match_type"],
             "drug_b_match_type": cb["match_type"],
-            "score": round(p_syn, 4),
+            "score": v_score,
+            "v_score": v_score,
             "p_synergy": round(p_syn, 4),
             "p_additive": round(p_add, 4),
             "p_antagonism": round(p_ant, 4),
+            "ranking": ranking_info,
             "predicted_class": eval_res["predicted_class"],
             "cell_line": cell_line_name,
             "search_method": "mcts",
@@ -768,8 +817,8 @@ def mcts_search_combinations(
             "faithfulness": None,
         })
 
-    # Sort strictly by p_synergy descending, with stable tie-breaking on drug IDs
-    scored_pairs.sort(key=lambda x: (-x["p_synergy"], x["drug_a"], x["drug_b"]))
+    # Sort strictly by composite score V(pair) descending, with stable tie-breaking on drug IDs
+    scored_pairs.sort(key=lambda x: (-x["score"], x["drug_a"], x["drug_b"]))
 
     final_hits = scored_pairs[:top_k]
     for i, hit in enumerate(final_hits, 1):
@@ -792,10 +841,13 @@ def beam_search_combinations(
     n_simulations: int = 50,
     mcts_c: float = 1.414,
     time_budget_sec: float = 15.0,
+    w_synergy: float = DEFAULT_W_SYNERGY,
+    w_toxicity: float = DEFAULT_W_TOXICITY,
+    w_redundancy: float = DEFAULT_W_REDUNDANCY,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Search candidate drug combinations using a state-space Beam Search, Greedy Search,
-    or Monte Carlo Tree Search (MCTS) driven directly by the trained SynergyGNN pair scorer.
+    or Monte Carlo Tree Search (MCTS) driven by the composite multi-objective function V(pair).
 
     State-Space Formulation (Depth 2 for 2-Drug Combinations):
     - Depth 1 (Anchor Selection):
@@ -806,11 +858,12 @@ def beam_search_combinations(
     - Depth 2 (Partner Expansion):
       Expands each anchor in the beam with eligible candidate drugs from the filtered
       candidate pool, forming unique candidate pairs (d_a, d_b).
-    - Batched GNN Scoring:
+    - Batched GNN Scoring & V(pair) Evaluation:
       All candidate pairs are scored in a batched forward pass through the trained
-      SynergyGNN model without heuristic tier overrides.
+      SynergyGNN model, then evaluated via V(pair) incorporating adverse DDI risk,
+      side-effect overlap, and target redundancy penalties.
     - Beam Pruning:
-      Prunes the candidate pool to the top-K pairs ranked strictly by p_synergy descending,
+      Prunes the candidate pool to the top-K pairs ranked strictly by composite V(pair) descending,
       using stable tie-breaking on (drug_a, drug_b) IDs to guarantee reproducibility.
     """
     if search_method.lower() == "mcts":
@@ -826,6 +879,9 @@ def beam_search_combinations(
             time_budget_sec=time_budget_sec,
             top_k=top_k,
             seed_drug_id=seed_drug_id,
+            w_synergy=w_synergy,
+            w_toxicity=w_toxicity,
+            w_redundancy=w_redundancy,
         )
 
     sys.path.insert(0, os.path.join(ROOT, "src"))
@@ -989,7 +1045,7 @@ def beam_search_combinations(
         f"({(scoring_duration / max(num_pairs, 1)) * 1000:.1f}ms per pair) on {device}."
     )
 
-    # 6. Parse and Rank Candidates Strictly by Model Score (with stable tie-breaking)
+    # 6. Parse and Rank Candidates Strictly by Composite Multi-Objective Score V(pair)
     scored_pairs: List[Dict[str, Any]] = []
     for p, probs in zip(pairs, all_probs):
         p_ant, p_add, p_syn = probs
@@ -1005,6 +1061,16 @@ def beam_search_combinations(
         )
         high_confidence_caveat = bool(p_syn > _HIGH_CONFIDENCE_THRESHOLD and is_speculative)
 
+        ranking_info = compute_pair_score_v(
+            p[0]["drug_id"],
+            p[1]["drug_id"],
+            p_synergy=p_syn,
+            w_synergy=w_synergy,
+            w_toxicity=w_toxicity,
+            w_redundancy=w_redundancy,
+        )
+        v_score = ranking_info["v_score"]
+
         scored_pairs.append({
             "drug_a": p[0]["drug_id"],
             "drug_a_name": p[0]["drug_name"],
@@ -1012,7 +1078,9 @@ def beam_search_combinations(
             "drug_b_name": p[1]["drug_name"],
             "drug_a_match_type": p[0]["match_type"],
             "drug_b_match_type": p[1]["match_type"],
-            "score": round(p_syn, 4),
+            "score": v_score,
+            "v_score": v_score,
+            "ranking": ranking_info,
             "p_synergy": round(p_syn, 4),
             "p_additive": round(p_add, 4),
             "p_antagonism": round(p_ant, 4),
@@ -1023,8 +1091,8 @@ def beam_search_combinations(
             "faithfulness": None,  # Batch search leaves faithfulness null
         })
 
-    # Beam Pruning: Sort strictly by GNN score descending, breaking ties stably by drug IDs
-    scored_pairs.sort(key=lambda x: (-x["p_synergy"], x["drug_a"], x["drug_b"]))
+    # Beam Pruning: Sort strictly by composite score V(pair) descending, breaking ties stably by drug IDs
+    scored_pairs.sort(key=lambda x: (-x["score"], x["drug_a"], x["drug_b"]))
 
     # Assign ranks
     final_hits = scored_pairs[:top_k]
@@ -1047,10 +1115,13 @@ def score_candidate_pairs(
     n_simulations: int = 50,
     mcts_c: float = 1.414,
     time_budget_sec: float = 15.0,
+    w_synergy: float = DEFAULT_W_SYNERGY,
+    w_toxicity: float = DEFAULT_W_TOXICITY,
+    w_redundancy: float = DEFAULT_W_REDUNDANCY,
 ) -> List[Dict[str, Any]]:
     """
     Backward-compatible wrapper around beam_search_combinations().
-    Returns the top-K pairs ranked strictly by GNN synergy score.
+    Returns the top-K pairs ranked by composite multi-objective score V(pair).
     """
     pairs, _ = beam_search_combinations(
         disease_name=disease_name,
@@ -1065,6 +1136,9 @@ def score_candidate_pairs(
         n_simulations=n_simulations,
         mcts_c=mcts_c,
         time_budget_sec=time_budget_sec,
+        w_synergy=w_synergy,
+        w_toxicity=w_toxicity,
+        w_redundancy=w_redundancy,
     )
     return pairs
 
@@ -1144,6 +1218,10 @@ def get_full_explanations_for_top_k(
         expl["search_method"] = pair.get("search_method", "beam")
         if "score" in pair:
             expl["score"] = pair["score"]
+        if "v_score" in pair:
+            expl["v_score"] = pair["v_score"]
+        if "ranking" in pair:
+            expl["ranking"] = pair["ranking"]
         if "p_synergy" in pair:
             expl["p_synergy"] = pair["p_synergy"]
         if "p_additive" in pair:
@@ -1217,18 +1295,17 @@ def _run_stage2_demo(
     )
     t_stage2 = time.time() - t2
 
-    print(f"\n[Stage 2] Top {len(top_pairs)} Candidate Pairs (Ranked by Evidence Tier, then p_synergy):")
-    print("-" * 90)
-    print(f"{'#':<3} {'Drug A':<22} {'Drug B':<22} {'Tier':<14} {'Class':<10} {'p_Syn':<8} {'p_Add':<8} {'p_Ant'}")
-    print("-" * 90)
+    print(f"\n[Stage 2] Top {len(top_pairs)} Candidate Pairs (Ranked by Model Synergy Score p_synergy):")
+    print("-" * 95)
+    print(f"{'#':<3} {'Drug A':<22} {'Drug B':<22} {'Class':<10} {'Score':<8} {'p_Syn':<8} {'p_Add':<8} {'p_Ant'}")
+    print("-" * 95)
     for i, p in enumerate(top_pairs, 1):
-        tier_label = f"T{p['pair_tier']}:{p['pair_tier_name']}"
         print(
             f"{i:<3} {p['drug_a_name']:<22} {p['drug_b_name']:<22} "
-            f"{tier_label:<14} {p['predicted_class'].upper():<10} {p['p_synergy']:<8.4f} "
+            f"{p['predicted_class'].upper():<10} {p.get('score', p['p_synergy']):<8.4f} {p['p_synergy']:<8.4f} "
             f"{p['p_additive']:<8.4f} {p['p_antagonism']:.4f}"
         )
-    print("-" * 90)
+    print("-" * 95)
 
     # Stage 3: Full Explanations on Top-K
     t3 = time.time()
@@ -1250,8 +1327,13 @@ def _run_stage2_demo(
 
     for i, expl in enumerate(full_explanations, 1):
         print(f"\n[{i}] {expl['drug_a_name']} + {expl['drug_b_name']} @ {expl['cell_line']}")
-        print(f"    Predicted: {expl['predicted_class'].upper()} (p_syn={expl['p_synergy']:.3f}, p_add={expl['p_additive']:.3f}, p_ant={expl['p_antagonism']:.3f})")
-        print(f"    Faithfulness: Necessity={expl.get('necessity_delta_pct', 0.0):+.1f}% | Sufficiency={expl.get('sufficiency_retained_pct', 0.0):.1f}%")
+        nec = expl.get("necessity_delta_pct")
+        suf = expl.get("sufficiency_retained_pct")
+        if nec is not None and suf is not None:
+            faith_str = f"Necessity={nec:+.1f}% | Sufficiency={suf:.1f}%"
+        else:
+            faith_str = "Skipped (run with inspect_top_k > 0 to evaluate in-silico ablation)"
+        print(f"    Faithfulness: {faith_str}")
         print(f"    Mechanism: \"{expl.get('explanation_text')}\"")
 
         lit = expl.get("supporting_literature", [])

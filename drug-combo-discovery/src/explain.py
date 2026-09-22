@@ -51,7 +51,7 @@ from collections import defaultdict
 
 import torch
 import torch.nn.functional as F
-from torch_geometric.loader import LinkNeighborLoader
+from torch_geometric.loader import NeighborLoader
 
 # ---------------------------------------------------------------------------
 # Path setup
@@ -121,29 +121,35 @@ def _resolve_name(ntype, idx, name_lookup):
 # ---------------------------------------------------------------------------
 
 def _sample_batch(heterodata, a_idx, b_idx, cell_idx):
-    data_copy = heterodata.clone()
+    """
+    Sample a compact local 2-hop HeteroData subgraph around drugs a_idx and b_idx
+    using NeighborLoader directly on the shared HeteroData (without cloning).
+    Avoids duplicating the full HeteroData in RAM, eliminating container OOMs.
+    """
+    num_neighbors = {et: [5, 3] for et in heterodata.edge_types}
+    input_nodes = ("drug", torch.tensor([a_idx, b_idx], dtype=torch.long))
 
-    edge_index  = torch.tensor([[a_idx], [b_idx]], dtype=torch.long)
+    loader = NeighborLoader(
+        data=heterodata,
+        num_neighbors=num_neighbors,
+        input_nodes=input_nodes,
+        batch_size=2,
+        shuffle=False,
+    )
+    batch = next(iter(loader))
+
+    # Identify batch-local indices of the two target drugs
+    local_a = (batch["drug"].n_id == a_idx).nonzero(as_tuple=True)[0][0].item()
+    local_b = (batch["drug"].n_id == b_idx).nonzero(as_tuple=True)[0][0].item()
+
+    edge_index = torch.tensor([[local_a], [local_b]], dtype=torch.long)
     dummy_label = torch.tensor([[0, cell_idx]], dtype=torch.long)
 
-    data_copy["drug", "synergy_pair", "drug"].edge_index       = edge_index
-    data_copy["drug", "synergy_pair", "drug"].edge_label_index = edge_index
-    data_copy["drug", "synergy_pair", "drug"].edge_label       = dummy_label
+    batch["drug", "synergy_pair", "drug"].edge_index = edge_index
+    batch["drug", "synergy_pair", "drug"].edge_label_index = edge_index
+    batch["drug", "synergy_pair", "drug"].edge_label = dummy_label
 
-    num_neighbors = {
-        et: ([0, 0] if et == ("drug", "synergy_pair", "drug") else [10, 5])
-        for et in data_copy.edge_types
-    }
-
-    loader = LinkNeighborLoader(
-        data             = data_copy,
-        num_neighbors    = num_neighbors,
-        edge_label_index = (("drug", "synergy_pair", "drug"), edge_index),
-        edge_label       = dummy_label,
-        batch_size       = 1,
-        shuffle          = False,
-    )
-    return next(iter(loader))
+    return batch
 
 
 # ---------------------------------------------------------------------------

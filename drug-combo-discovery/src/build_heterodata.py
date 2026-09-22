@@ -376,6 +376,8 @@ def cold_drug_split(
     """
     Splits labeled_pairs.csv into train/val/test using a cold-drug strategy.
 
+    Headline MUST use this cold-drug split; also report bilateral-subset AUROC/AUPR as the stricter inductive metric.
+
     Logic:
         1. Collect all unique drug IDs appearing in drug_a_kg_id or drug_b_kg_id.
         2. Shuffle and partition: first ~15% → test_drugs, next ~15% → val_drugs,

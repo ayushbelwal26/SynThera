@@ -9,6 +9,7 @@ __pycache__/
 # Distribution / packaging
 build/
 dist/
+dist-backend/
 *.egg-info/
 
 # Environments
@@ -28,14 +29,19 @@ data/processed/*
 !data/processed/.gitkeep
 
 # Model checkpoints & weights
-models/*.ckpt
-models/*.pt
-models/*.pth
-models/*.onnx
+*.ckpt
+**/*.ckpt
+*.pt
+**/*.pt
+*.pth
+**/*.pth
+*.onnx
+**/*.onnx
 
 # Environment variables & secrets
 .env
 .env.*
+*.env
 
 # Testing & Coverage
 .pytest_cache/
@@ -45,3 +51,7 @@ htmlcov/
 # OS artifacts
 .DS_Store
 Thumbs.db
+
+# Scratch and experiment files
+scratch/
+
