@@ -142,6 +142,13 @@ def compose_triple_result(
 
     # 3. Triple Toxicity Penalty: Union / max of constituent penalties
     triple_tox_penalty = round(max(tox_ab, tox_ac, tox_bc), 4)
+    tox_candidates = [
+        (tox_ab, da_name, db_name, "pair_ab", pair_ab),
+        (tox_ac, da_name, dc_name, "pair_ac", pair_ac),
+        (tox_bc, db_name, dc_name, "pair_bc", pair_bc),
+    ]
+    tox_candidates.sort(key=lambda x: x[0], reverse=True)
+    max_tox, max_tox_d1, max_tox_d2, max_tox_key, max_tox_ranking = tox_candidates[0]
 
     # 4. Overall DDI Flag
     # True if ANY pair has confirmed DDI; False if ALL pairs confirmed Safe; None if any unindexed
@@ -177,6 +184,13 @@ def compose_triple_result(
             "v_score": round(v_min, 4),
             "p_synergy": bottleneck_ranking["p_synergy"],
             "toxicity_penalty": bottleneck_ranking["toxicity_penalty"],
+        },
+        "max_toxicity_pair": {
+            "pair_key": max_tox_key,
+            "drug_1": max_tox_d1,
+            "drug_2": max_tox_d2,
+            "toxicity_penalty": round(max_tox, 4),
+            "has_known_ddi": max_tox_ranking["breakdown"]["has_known_ddi"],
         },
         "pair_ab": pair_ab,
         "pair_ac": pair_ac,
@@ -341,47 +355,25 @@ def search_triple_combinations(
         f"unique constituent pairs to score."
     )
 
-    # 5. Batched GNN Inference for All Constituent Pairs
+    # 5. Batched GNN Inference for All Constituent Pairs (Option A: Symmetric Inference Wrapper)
     t_gnn_start = time.time()
     torch.manual_seed(42)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(42)
 
-    a_indices = [drug_id2idx[p[0]["drug_id"]] for p in unique_pairs]
-    b_indices = [drug_id2idx[p[1]["drug_id"]] for p in unique_pairs]
-
-    data_work = heterodata.clone()
-    edge_index_all = torch.tensor([a_indices, b_indices], dtype=torch.long)
-    dummy_label_all = torch.tensor([[0, cell_idx]] * n_unique_pairs, dtype=torch.long)
-
-    data_work["drug", "synergy_pair", "drug"].edge_index = edge_index_all
-    data_work["drug", "synergy_pair", "drug"].edge_label_index = edge_index_all
-    data_work["drug", "synergy_pair", "drug"].edge_label = dummy_label_all
-
-    num_neighbors = {
-        et: ([0, 0] if et == ("drug", "synergy_pair", "drug") else [5, 3])
-        for et in data_work.edge_types
-    }
-
-    loader = LinkNeighborLoader(
-        data=data_work,
-        num_neighbors=num_neighbors,
-        edge_label_index=(("drug", "synergy_pair", "drug"), edge_index_all),
-        edge_label=dummy_label_all,
-        batch_size=32,
-        shuffle=False,
+    sys.path.insert(0, os.path.join(ROOT, "src"))
+    from predict import predict_synergy_batch, THRESHOLD_SYNERGY, THRESHOLD_ANTAGONISM
+    pair_id_list = [(p[0]["drug_id"], p[1]["drug_id"]) for p in unique_pairs]
+    batch_results = predict_synergy_batch(
+        pairs=pair_id_list,
+        cell_line_name=canonical_cl,
+        module=module,
+        heterodata=heterodata,
+        threshold_synergy=THRESHOLD_SYNERGY,
+        threshold_antagonism=THRESHOLD_ANTAGONISM,
+        device=device,
     )
-
-    all_logits = []
-    module.eval()
-    with torch.no_grad():
-        for batch in loader:
-            batch = batch.to(device)
-            logits, _ = module(batch)
-            all_logits.append(logits.cpu())
-
-    all_logits = torch.cat(all_logits, dim=0)
-    all_probs = F.softmax(all_logits, dim=-1).tolist()
+    all_probs = [[r["p_antagonism"], r["p_additive"], r["p_synergy"]] for r in batch_results]
     gnn_elapsed = time.time() - t_gnn_start
     logger.info(f"[TRIPLE SEARCH] Scored {n_unique_pairs} pairs via GNN in {gnn_elapsed:.2f}s.")
 

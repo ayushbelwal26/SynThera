@@ -81,10 +81,13 @@ def evaluate_cold_split_subsets(
     eval_val: bool = True,
     return_details: bool = False,
     n_passes: int = 5,
+    symmetric: bool = False,
 ) -> dict[str, dict[str, float]] | tuple:
     """
     Evaluates model predictions on val split, full cold-drug test, bilateral cold subset, and unilateral cold subset.
     When n_passes > 1, seeds torch/PyG (seeds 0 to n_passes-1) for deterministic evaluation, reporting mean and SD.
+    When symmetric=True, evaluates both forward (A, B) and reverse (B, A) orderings per pair and averages probabilities.
+    When symmetric=False, evaluates pairs in the single fixed order from labeled_pairs.csv (original eval behavior).
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -113,6 +116,7 @@ def evaluate_cold_split_subsets(
     model.eval()
 
     results = {}
+    mode_str = "Symmetric (S2 Averaged)" if symmetric else "Single Fixed-Order (Baseline)"
 
     # Optional: Validation split evaluation
     if eval_val:
@@ -120,18 +124,28 @@ def evaluate_cold_split_subsets(
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(42)
         np.random.seed(42)
-        print(f"\n[Val Evaluation] Running inference over {len(val_loader)} val batches (seed=42)...")
-        val_logits, val_labels = [], []
+        print(f"\n[Val Evaluation] Running inference over {len(val_loader)} val batches (seed=42, mode={mode_str})...")
+        val_probs, val_labels = [], []
         with torch.no_grad():
             for idx, batch in enumerate(val_loader):
                 batch = batch.to(device_obj)
-                logits, labels = model(batch)
-                if logits.shape[0] > 0:
-                    val_logits.append(logits.detach().cpu())
+                logits_fwd, labels = model(batch)
+                if symmetric:
+                    batch_rev = batch.clone()
+                    edge_index_orig = batch_rev["drug", "synergy_pair", "drug"].edge_label_index
+                    batch_rev["drug", "synergy_pair", "drug"].edge_label_index = edge_index_orig[[1, 0]]
+                    logits_rev, _ = model(batch_rev)
+                    p_fwd = F.softmax(logits_fwd, dim=-1)
+                    p_rev = F.softmax(logits_rev, dim=-1)
+                    p_sym = (p_fwd + p_rev) / 2.0
+                    val_probs.append(p_sym.detach().cpu())
+                else:
+                    val_probs.append(F.softmax(logits_fwd, dim=-1).detach().cpu())
+                if labels.shape[0] > 0:
                     val_labels.append(labels.detach().cpu())
-        val_logits = torch.cat(val_logits, dim=0)
+        val_probs = torch.cat(val_probs, dim=0)
         val_labels = torch.cat(val_labels, dim=0)
-        v_probs = F.softmax(val_logits, dim=-1).numpy()
+        v_probs = val_probs.numpy()
         v_labels_np = val_labels.numpy()
         v_auroc, v_aupr = compute_macro_metrics(v_labels_np, v_probs)
         v_syn_auc, v_syn_aupr, v_lift = compute_binary_synergy_metrics(v_labels_np, v_probs)
@@ -169,7 +183,7 @@ def evaluate_cold_split_subsets(
     pass_probs_list = []
     pass_metrics_by_subset = {sub_name: [] for sub_name in subsets}
 
-    print(f"\n[3/4] Running {n_passes}-pass deterministic evaluation (seeds 0 to {n_passes-1})...")
+    print(f"\n[3/4] Running {n_passes}-pass deterministic evaluation (seeds 0 to {n_passes-1}, mode={mode_str})...")
     labels_np = None
 
     for pass_idx in range(n_passes):
@@ -178,19 +192,29 @@ def evaluate_cold_split_subsets(
             torch.cuda.manual_seed_all(pass_idx)
         np.random.seed(pass_idx)
 
-        pass_logits = []
+        pass_probs = []
         pass_labels = []
         with torch.no_grad():
             for batch in test_loader:
                 batch = batch.to(device_obj)
-                logits, labels = model(batch)
-                if logits.shape[0] > 0:
-                    pass_logits.append(logits.detach().cpu())
+                logits_fwd, labels = model(batch)
+                if symmetric:
+                    batch_rev = batch.clone()
+                    edge_index_orig = batch_rev["drug", "synergy_pair", "drug"].edge_label_index
+                    batch_rev["drug", "synergy_pair", "drug"].edge_label_index = edge_index_orig[[1, 0]]
+                    logits_rev, _ = model(batch_rev)
+                    p_fwd = F.softmax(logits_fwd, dim=-1)
+                    p_rev = F.softmax(logits_rev, dim=-1)
+                    p_sym = (p_fwd + p_rev) / 2.0
+                    pass_probs.append(p_sym.detach().cpu())
+                else:
+                    pass_probs.append(F.softmax(logits_fwd, dim=-1).detach().cpu())
+                if labels.shape[0] > 0:
                     pass_labels.append(labels.detach().cpu())
 
-        pass_logits = torch.cat(pass_logits, dim=0)
+        pass_probs = torch.cat(pass_probs, dim=0)
         pass_labels = torch.cat(pass_labels, dim=0)
-        p_probs = F.softmax(pass_logits, dim=-1).numpy()
+        p_probs = pass_probs.numpy()
         if labels_np is None:
             labels_np = pass_labels.numpy()
 
@@ -214,6 +238,8 @@ def evaluate_cold_split_subsets(
 
     # Compute mean and SD across passes
     print("\n" + "=" * 115)
+    print(f"EVALUATION RESULTS — Mode: {mode_str}")
+    print("=" * 115)
     print(f"{'Split / Subset':<35} | {'Pairs':>8} | {'Macro AUROC (SD)':<18} | {'Macro AUPR (SD)':<16} | {'Syn AUROC (SD)':<16} | {'Syn AUPR (SD)':<15} | {'Lift':<6}")
     print("=" * 115)
 
@@ -262,6 +288,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate cold-drug split and subsets")
     parser.add_argument("--ckpt", type=str, default=None, help="Path to checkpoint file")
     parser.add_argument("--no-val", action="store_true", help="Skip validation set evaluation")
+    parser.add_argument("--symmetric", action="store_true", help="Enable symmetric inference wrapper (averaging forward and reverse orderings)")
+    parser.add_argument("--compare", action="store_true", help="Run both baseline fixed-order and symmetric inference side-by-side")
     args = parser.parse_args()
 
     default_ckpt = os.path.join(MODELS_DIR, "synergy_gnn_runA.ckpt")
@@ -273,4 +301,34 @@ if __name__ == "__main__":
     else:
         ckpt = args.ckpt
 
-    evaluate_cold_split_subsets(ckpt_path=ckpt, eval_val=not args.no_val)
+    if args.compare:
+        print("\n" + "=" * 90)
+        print(">>> 1/2: EVALUATING BASELINE (SINGLE FIXED-ORDER INFERENCE)...")
+        print("=" * 90)
+        base_res = evaluate_cold_split_subsets(ckpt_path=ckpt, eval_val=not args.no_val, symmetric=False)
+
+        print("\n" + "=" * 90)
+        print(">>> 2/2: EVALUATING POST-FIX (SYMMETRIC S2-AVERAGED INFERENCE)...")
+        print("=" * 90)
+        sym_res = evaluate_cold_split_subsets(ckpt_path=ckpt, eval_val=not args.no_val, symmetric=True)
+
+        print("\n" + "=" * 110)
+        print("SIDE-BY-SIDE COMPARISON: BASELINE (FIXED-ORDER) vs. POST-FIX (SYMMETRIC INFERENCE)")
+        print("=" * 110)
+        print(f"{'Split / Subset':<35} | {'Metric':<14} | {'Baseline (Fixed-Order)':<24} | {'Symmetric (Post-Fix)':<22} | {'Delta':<8}")
+        print("-" * 110)
+        for sub_name in ["Full cold-drug test (headline)", "Bilateral cold-drug (neither in train)", "Unilateral cold-drug (exactly one in train)"]:
+            b = base_res[sub_name]
+            s = sym_res[sub_name]
+            d_auroc = s["auroc"] - b["auroc"]
+            d_aupr = s["aupr"] - b["aupr"]
+            d_syn_auc = s["syn_auroc"] - b["syn_auroc"]
+            d_syn_aupr = s["syn_aupr"] - b["syn_aupr"]
+            print(f"{sub_name:<35} | Macro AUROC    | {b['auroc']:>7.4f} (+/-{b['auroc_sd']:.4f})       | {s['auroc']:>7.4f} (+/-{s['auroc_sd']:.4f})      | {d_auroc:>+7.4f}")
+            print(f"{'':<35} | Macro AUPR     | {b['aupr']:>7.4f} (+/-{b['aupr_sd']:.4f})       | {s['aupr']:>7.4f} (+/-{s['aupr_sd']:.4f})      | {d_aupr:>+7.4f}")
+            print(f"{'':<35} | Syn AUROC      | {b['syn_auroc']:>7.4f} (+/-{b['syn_auroc_sd']:.4f})       | {s['syn_auroc']:>7.4f} (+/-{s['syn_auroc_sd']:.4f})      | {d_syn_auc:>+7.4f}")
+            print(f"{'':<35} | Syn AUPR       | {b['syn_aupr']:>7.4f} (+/-{b['syn_aupr_sd']:.4f})       | {s['syn_aupr']:>7.4f} (+/-{s['syn_aupr_sd']:.4f})      | {d_syn_aupr:>+7.4f}")
+            print("-" * 110)
+        print("=" * 110)
+    else:
+        evaluate_cold_split_subsets(ckpt_path=ckpt, eval_val=not args.no_val, symmetric=args.symmetric)

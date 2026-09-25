@@ -345,6 +345,10 @@ def main(
     checkpoint_dir: str = MODELS_DIR,
     use_regularization: bool = False,
     use_target_features: bool = False,
+    enriched_pair_head: bool = False,
+    use_chemberta: bool = False,
+    use_expression: bool = False,
+    use_dsn_spn: bool = False,
     fp_dropout: float = 0.10,
     drug_mask_frac: float = 0.15,
     edge_drop_frac: float = 0.50,
@@ -360,18 +364,51 @@ def main(
         use_regularization = True
     if "runC" in run_name or "run_c" in run_name.lower():
         use_target_features = True
+    if "pair_interaction" in run_name.lower() or "enriched" in run_name.lower():
+        enriched_pair_head = True
+    if "chemberta" in run_name.lower():
+        use_chemberta = True
+    if "expression" in run_name.lower():
+        use_expression = True
+    if "dsn_spn" in run_name.lower() or "dsn" in run_name.lower():
+        use_dsn_spn = True
 
     pl.seed_everything(seed, workers=True)
     os.makedirs(checkpoint_dir, exist_ok=True)
     warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
-    reg_desc = f" (Regularized Run B: fp_drop={fp_dropout}, drug_mask={drug_mask_frac}, edge_drop={edge_drop_frac})" if use_regularization else ""
+    reg_desc    = f" (Regularized Run B: fp_drop={fp_dropout}, drug_mask={drug_mask_frac}, edge_drop={edge_drop_frac})" if use_regularization else ""
     target_desc = " (Target Features Run C active: 4 hand-crafted PPI features)" if use_target_features else ""
-    _sep(f"SynergyGNN — Training ({run_name}, seed={seed}){reg_desc}{target_desc}")
+    chemb_desc  = " (Experiment 3: Combined Morgan + ChemBERTa active)" if use_chemberta else ""
+    expr_desc   = " (Experiment 4A: CCLE gene expression cell-line representation)" if use_expression else ""
+    dsn_desc    = " (Experiment 5: DSN/SPN active: drug-specific subnetwork + symmetric SPN)" if use_dsn_spn else ""
+    _sep(f"SynergyGNN — Training ({run_name}, seed={seed}){reg_desc}{target_desc}{chemb_desc}{expr_desc}{dsn_desc}")
     t_total = time.time()
 
     # ── 1. Load data ──────────────────────────────────────────────
     heterodata, labels_df, train_idx, val_idx, test_idx = load_data()
+
+    # ── 1b. Load expression matrix (Experiment 4A) ────────────────
+    expression_tensor = None
+    expression_dim    = 0
+    if use_expression:
+        expr_path = os.path.join(PROCESSED, "cell_line_expression.pt")
+        if not os.path.exists(expr_path):
+            raise FileNotFoundError(
+                f"Expression tensor not found: {expr_path}\n"
+                f"Run scratch/prepare_expression.py first."
+            )
+        expression_tensor = torch.load(expr_path, weights_only=True, map_location="cpu")
+        expression_dim    = expression_tensor.shape[1]
+        print(f"  Loaded expression tensor: {expression_tensor.shape}  (80 CL x {expression_dim} genes)")
+
+    if use_chemberta:
+        chemb_matrix_path = os.path.join(PROCESSED, "drug_chemberta_matrix.pt")
+        if os.path.exists(chemb_matrix_path):
+            heterodata["drug"].chemberta_x = torch.load(chemb_matrix_path, weights_only=False)
+            print(f"  Loaded aligned ChemBERTa matrix -> heterodata['drug'].chemberta_x: {heterodata['drug'].chemberta_x.shape}")
+        else:
+            raise FileNotFoundError(f"ChemBERTa matrix not found at {chemb_matrix_path}")
 
     # ── 2. Build loaders ─────────────────────────────────────────
     train_loader, val_loader, test_loader = build_loaders(
@@ -410,16 +447,31 @@ def main(
         lr                 = LR,
         weight_decay       = WEIGHT_DECAY,
         max_epochs         = MAX_EPOCHS,
-        enriched_pair_head = False,  # keep baseline architecture (384-dim simple concat)
+        enriched_pair_head = enriched_pair_head,
         use_target_features = use_target_features,
+        use_chemberta      = use_chemberta,
+        use_expression     = use_expression,
+        expression_dim     = expression_dim,
+        use_dsn_spn        = use_dsn_spn,
         **extra_kwargs,
     )
+
+    # Register expression buffer on the GNN submodule so it moves to GPU automatically
+    if use_expression and expression_tensor is not None:
+        model.model.register_buffer("expression_buffer", expression_tensor)
+        print(f"  Registered expression_buffer: {expression_tensor.shape} on model.model")
 
     n_fp       = int(heterodata["drug"].fp_mask.sum().item())
     n_fallback = heterodata["drug"].num_nodes - n_fp
     print(f"  Drug embedded nodes: {n_fp:,}  (Morgan FP 2048 -> Linear(2048->128))")
+    if use_chemberta:
+        print(f"  Drug ChemBERTa     : {n_fp:,}  (ChemBERTa 768 -> Linear(768->128))")
+        print(f"  Drug Fusion Proj   : [Morgan_128 || ChemBERTa_128] -> Linear(256->128)")
     print(f"  Drug fallback nodes: {n_fallback:,}  (trainable ID emb disabled in forward pass)")
-    print(f"  Cell lines         : {heterodata.num_cell_lines}  (learnable Embedding(N, 64) -> scorer)")
+    if use_expression:
+        print(f"  Cell lines (Exp4A) : {heterodata.num_cell_lines}  (CCLE expr {expression_dim}-d -> Linear({expression_dim}->128))")
+    else:
+        print(f"  Cell lines         : {heterodata.num_cell_lines}  (learnable Embedding(N, 64) -> scorer)")
     if use_regularization:
         print(f"  [Run B Active] Drug FP bit dropout: {fp_dropout:.0%}")
         print(f"  [Run B Active] Drug edge masking  : {drug_mask_frac:.0%} drugs, {edge_drop_frac:.0%} non-drug edges dropped")
@@ -537,7 +589,14 @@ def main(
         num_fallback_drugs = int((~heterodata["drug"].fp_mask).sum().item()),
         num_cell_lines     = heterodata.num_cell_lines,
         class_weights      = class_weights,
+        use_expression     = use_expression,
+        expression_dim     = expression_dim,
+        use_dsn_spn        = use_dsn_spn,
     )
+
+    # Re-register expression buffer after loading
+    if use_expression and expression_tensor is not None:
+        best_model.model.register_buffer("expression_buffer", expression_tensor)
 
     trainer.test(best_model, test_loader)
 
@@ -594,6 +653,10 @@ if __name__ == "__main__":
         ckpt_dir = MODELS_DIR
         use_reg = "--use-regularization" in sys.argv or "--run-B" in sys.argv
         use_target = "--use-target-features" in sys.argv or "--run-C" in sys.argv
+        use_enriched = "--enriched-pair-head" in sys.argv or "--pair-interaction" in sys.argv
+        use_chemb  = "--use-chemberta" in sys.argv or "--chemberta" in sys.argv
+        use_expr   = "--use-expression" in sys.argv or "--expression" in sys.argv
+        use_dsn    = "--use-dsn-spn" in sys.argv or "--dsn-spn" in sys.argv or "--dsn" in sys.argv
         for i, a in enumerate(sys.argv):
             if a == "--run-name" and i + 1 < len(sys.argv):
                 run_name = sys.argv[i + 1]
@@ -608,5 +671,9 @@ if __name__ == "__main__":
             checkpoint_dir=ckpt_dir,
             use_regularization=use_reg,
             use_target_features=use_target,
+            enriched_pair_head=use_enriched,
+            use_chemberta=use_chemb,
+            use_expression=use_expr,
+            use_dsn_spn=use_dsn,
         )
 

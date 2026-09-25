@@ -602,48 +602,23 @@ def mcts_search_combinations(
 
     def score_single_pair(d_a: str, d_b: str) -> Dict[str, Any]:
         nonlocal n_pairs_scored
-        a_idx = drug_id2idx[d_a]
-        b_idx = drug_id2idx[d_b]
-        data_work = heterodata.clone()
-        edge_index = torch.tensor([[a_idx], [b_idx]], dtype=torch.long)
-        dummy_label = torch.tensor([[0, cell_idx]], dtype=torch.long)
-
-        data_work["drug", "synergy_pair", "drug"].edge_index = edge_index
-        data_work["drug", "synergy_pair", "drug"].edge_label_index = edge_index
-        data_work["drug", "synergy_pair", "drug"].edge_label = dummy_label
-
-        num_neighbors = {
-            et: ([0, 0] if et == ("drug", "synergy_pair", "drug") else [5, 3])
-            for et in data_work.edge_types
-        }
-        loader = LinkNeighborLoader(
-            data=data_work,
-            num_neighbors=num_neighbors,
-            edge_label_index=(("drug", "synergy_pair", "drug"), edge_index),
-            edge_label=dummy_label,
-            batch_size=1,
-            shuffle=False,
+        from predict import predict_synergy
+        res = predict_synergy(
+            drug_a_id=d_a,
+            drug_b_id=d_b,
+            cell_line_name=cell_line_name,
+            module=module,
+            heterodata=heterodata,
+            threshold_synergy=THRESHOLD_SYNERGY,
+            threshold_antagonism=THRESHOLD_ANTAGONISM,
+            device=device,
         )
-        module.eval()
-        with torch.no_grad():
-            batch = next(iter(loader)).to(device)
-            logits, _ = module(batch)
-            probs = F.softmax(logits, dim=-1)[0].tolist()
-
         n_pairs_scored += 1
-        p_ant, p_add, p_syn = probs
-        if p_syn > THRESHOLD_SYNERGY:
-            pred = "synergy"
-        elif p_ant > THRESHOLD_ANTAGONISM:
-            pred = "antagonism"
-        else:
-            pred = "additive"
-
         return {
-            "p_antagonism": p_ant,
-            "p_additive": p_add,
-            "p_synergy": p_syn,
-            "predicted_class": pred,
+            "p_antagonism": res["p_antagonism"],
+            "p_additive": res["p_additive"],
+            "p_synergy": res["p_synergy"],
+            "predicted_class": res["prediction"],
         }
 
     class MCTSNode:
@@ -996,48 +971,24 @@ def beam_search_combinations(
     if num_pairs == 0:
         return [], metadata
 
-    # 5. Batched GNN Scoring Pass
+    # 5. Batched GNN Scoring Pass (Option A: Symmetric Inference Wrapper)
     t_start = time.time()
-    # Seed RNG to ensure identical neighbor sampling and bitwise reproducible scores across reruns
     torch.manual_seed(42)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(42)
 
-    a_indices = [drug_id2idx[p[0]["drug_id"]] for p in pairs]
-    b_indices = [drug_id2idx[p[1]["drug_id"]] for p in pairs]
-
-    data_work = heterodata.clone()
-    edge_index_all = torch.tensor([a_indices, b_indices], dtype=torch.long)
-    dummy_label_all = torch.tensor([[0, cell_idx]] * num_pairs, dtype=torch.long)
-
-    data_work["drug", "synergy_pair", "drug"].edge_index = edge_index_all
-    data_work["drug", "synergy_pair", "drug"].edge_label_index = edge_index_all
-    data_work["drug", "synergy_pair", "drug"].edge_label = dummy_label_all
-
-    num_neighbors = {
-        et: ([0, 0] if et == ("drug", "synergy_pair", "drug") else [5, 3])
-        for et in data_work.edge_types
-    }
-
-    loader = LinkNeighborLoader(
-        data=data_work,
-        num_neighbors=num_neighbors,
-        edge_label_index=(("drug", "synergy_pair", "drug"), edge_index_all),
-        edge_label=dummy_label_all,
-        batch_size=32,
-        shuffle=False,
+    from predict import predict_synergy_batch
+    pair_id_list = [(p[0]["drug_id"], p[1]["drug_id"]) for p in pairs]
+    batch_results = predict_synergy_batch(
+        pairs=pair_id_list,
+        cell_line_name=cell_line_name,
+        module=module,
+        heterodata=heterodata,
+        threshold_synergy=THRESHOLD_SYNERGY,
+        threshold_antagonism=THRESHOLD_ANTAGONISM,
+        device=device,
     )
-
-    all_logits = []
-    module.eval()
-    with torch.no_grad():
-        for batch in loader:
-            batch = batch.to(device)
-            logits, _ = module(batch)
-            all_logits.append(logits.cpu())
-
-    all_logits = torch.cat(all_logits, dim=0)
-    all_probs = F.softmax(all_logits, dim=-1).tolist()
+    all_probs = [[r["p_antagonism"], r["p_additive"], r["p_synergy"]] for r in batch_results]
 
     scoring_duration = time.time() - t_start
     print(

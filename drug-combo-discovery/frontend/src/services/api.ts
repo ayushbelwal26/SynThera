@@ -22,14 +22,12 @@ import type {
   PredictionResult,
   SearchRequest,
   SearchResponse,
-  TriplePredictRequest,
-  TripleResult,
-  TripleSearchRequest,
-  TripleSearchResponse,
   WhyNotRequest,
   WhyNotResponse,
   CellLineRelevanceStatus,
   FaithfulnessStatus,
+  ChatAnalysisRequest,
+  ChatAnalysisResponse,
 } from '../types/api';
 
 // Configurable base URL: prefers VITE_API_BASE_URL, falls back to local FastAPI port 8000
@@ -160,51 +158,6 @@ export async function searchCombinations(
   });
 }
 
-/**
- * Discover candidate three-drug combinations via composed pair scores.
- * Disclaimer: "We compose pair scores; we do not have DrugComb 3-way synergy labels."
- */
-export async function searchTripleCombinations(
-  request: TripleSearchRequest,
-  signal?: AbortSignal
-): Promise<TripleSearchResponse> {
-  const payload = {
-    disease: request.disease.trim(),
-    cell_line: request.cell_line.trim(),
-    max_candidates: request.max_candidates ?? 10,
-    top_k: request.top_k ?? 5,
-    time_budget_sec: request.time_budget_sec ?? 15.0,
-    w_synergy: request.w_synergy,
-    w_toxicity: request.w_toxicity,
-    w_redundancy: request.w_redundancy,
-  };
-  return fetchJson<TripleSearchResponse>(`${API_BASE}/search-triple`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-    signal,
-  });
-}
-
-/**
- * Targeted analysis of a user-specified three-drug combination.
- * Disclaimer: "We compose pair scores; we do not have DrugComb 3-way synergy labels."
- */
-export async function predictTripleCombination(
-  request: TriplePredictRequest,
-  signal?: AbortSignal
-): Promise<TripleResult> {
-  const payload = {
-    drug_a: request.drug_a.trim(),
-    drug_b: request.drug_b.trim(),
-    drug_c: request.drug_c.trim(),
-    cell_line: request.cell_line.trim(),
-  };
-  return fetchJson<TripleResult>(`${API_BASE}/predict-triple`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-    signal,
-  });
-}
 
 /**
  * Ask why a drug is missing, filtered, or ranked below top combinations.
@@ -305,3 +258,16 @@ export function getFaithfulnessStatus(
     verdictMessage: 'Faithfulness ablation not yet evaluated — inspect combination for full in-silico verification.',
   };
 }
+
+/**
+ * Send an interactive analysis chat message with grounded tool calling.
+ */
+export async function sendAnalysisChatMessage(
+  request: ChatAnalysisRequest
+): Promise<ChatAnalysisResponse> {
+  return fetchJson<ChatAnalysisResponse>(`${API_BASE}/chat/analysis`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+

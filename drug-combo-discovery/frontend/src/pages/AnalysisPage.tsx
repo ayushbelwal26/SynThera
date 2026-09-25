@@ -9,6 +9,7 @@ import { PathwayGraph } from '../components/analysis/PathwayGraph';
 import { NodeDetailModal } from '../components/analysis/NodeDetailModal';
 import { FaithfulnessCard } from '../components/analysis/FaithfulnessCard';
 import { LiteratureSection } from '../components/analysis/LiteratureSection';
+import { AnalysisChatPanel } from '../components/analysis/AnalysisChatPanel';
 import { BENCHMARKS } from '../components/discover/BenchmarkPresets';
 import { predictCombination } from '../services/api';
 import { LoadingStages } from '../components/common/LoadingStages';
@@ -103,6 +104,9 @@ export const AnalysisPage: React.FC = () => {
     <div className="space-y-6">
       {/* 1. Header with Metadata, Class Badge, Export */}
       <PredictionHeader prediction={currentPrediction} />
+
+      {/* 1b. Grounded LLM Chat Assistant Panel (OpenRouter Tools) */}
+      <AnalysisChatPanel prediction={currentPrediction} />
 
       {/* 2. Calibrated Probability Vector Bar */}
       <ProbabilityVector prediction={currentPrediction} />

@@ -54,9 +54,9 @@ export const ToxicityBadge: React.FC<ToxicityBadgeProps> = ({
       <span
         title={`Known adverse drug-drug interaction flagged in PrimeKG DDI network (ddi_risk = 1.0).${
           toxicityPenalty !== undefined && toxicityPenalty !== null
-            ? ` Total tox penalty: ${toxicityPenalty.toFixed(4)}`
+            ? ` Total tox penalty: ${toxicityPenalty.toFixed(4)}.`
             : ''
-        }`}
+        } Flags static database risk; does not model clinical dose scheduling or monitoring.`}
         className={`inline-flex items-center font-mono uppercase rounded font-semibold bg-[#FEF2F2] text-[#B91C1C] border border-[#FECACA] ${sizeClasses[size]} ${className}`}
       >
         <AlertTriangle className={`${iconSizes[size]} text-[#DC2626] shrink-0`} />

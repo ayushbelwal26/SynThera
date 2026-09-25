@@ -47,11 +47,23 @@ from __future__ import annotations
 import os
 import sys
 import json
+import copy
 from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 from torch_geometric.loader import NeighborLoader
+from torch_geometric.data import Batch
+
+# In-memory explanation cache: (d_min, d_max, cell_line, top_k, run_faithfulness, run_literature, disease_context) -> result dict
+_EXPLANATION_CACHE: dict[tuple, dict[str, Any]] = {}
+
+
+def clear_explanation_cache() -> None:
+    """Clear the in-memory cache of computed explanations."""
+    global _EXPLANATION_CACHE
+    _EXPLANATION_CACHE.clear()
 
 # ---------------------------------------------------------------------------
 # Path setup
@@ -125,9 +137,12 @@ def _sample_batch(heterodata, a_idx, b_idx, cell_idx):
     Sample a compact local 2-hop HeteroData subgraph around drugs a_idx and b_idx
     using NeighborLoader directly on the shared HeteroData (without cloning).
     Avoids duplicating the full HeteroData in RAM, eliminating container OOMs.
+    Canonicalizes input nodes and adds both forward and reverse supervision edges
+    for permutation-invariant gradient backpropagation and ablation.
     """
+    min_idx, max_idx = min(a_idx, b_idx), max(a_idx, b_idx)
     num_neighbors = {et: [5, 3] for et in heterodata.edge_types}
-    input_nodes = ("drug", torch.tensor([a_idx, b_idx], dtype=torch.long))
+    input_nodes = ("drug", torch.tensor([min_idx, max_idx], dtype=torch.long))
 
     loader = NeighborLoader(
         data=heterodata,
@@ -139,11 +154,12 @@ def _sample_batch(heterodata, a_idx, b_idx, cell_idx):
     batch = next(iter(loader))
 
     # Identify batch-local indices of the two target drugs
-    local_a = (batch["drug"].n_id == a_idx).nonzero(as_tuple=True)[0][0].item()
-    local_b = (batch["drug"].n_id == b_idx).nonzero(as_tuple=True)[0][0].item()
+    local_min = (batch["drug"].n_id == min_idx).nonzero(as_tuple=True)[0][0].item()
+    local_max = (batch["drug"].n_id == max_idx).nonzero(as_tuple=True)[0][0].item()
 
-    edge_index = torch.tensor([[local_a], [local_b]], dtype=torch.long)
-    dummy_label = torch.tensor([[0, cell_idx]], dtype=torch.long)
+    # Forward (min -> max) and Reverse (max -> min) supervision edges for symmetric evaluation
+    edge_index = torch.tensor([[local_min, local_max], [local_max, local_min]], dtype=torch.long)
+    dummy_label = torch.tensor([[0, cell_idx], [0, cell_idx]], dtype=torch.long)
 
     batch["drug", "synergy_pair", "drug"].edge_index = edge_index
     batch["drug", "synergy_pair", "drug"].edge_label_index = edge_index
@@ -156,15 +172,39 @@ def _sample_batch(heterodata, a_idx, b_idx, cell_idx):
 # Edge importance scorer
 # ---------------------------------------------------------------------------
 
-def _score_edges(batch, grad_norms, name_lookup, top_k=10):
+def _score_edges(
+    batch,
+    name_lookup_or_grad=None,
+    top_k: int = 10,
+    module: Any = None,
+    pred_idx: int = 2,
+    original_prob: float | None = None,
+    device: str = "cpu",
+    chunk_size: int = 64,
+    name_lookup: dict | None = None,
+    grad_norms: dict | None = None,
+):
     """
-    Score every KG edge in the local subgraph by the source node's gradient norm.
+    Score KG edges in the local subgraph using direct leave-one-out perturbation scoring
+    (Option 4), with fallback to gradient saliency if module is not provided.
 
-    IMPORTANT: edge_index values are *batch-local* indices (0 .. N_local-1).
-    To resolve node names from primekg_nodes.csv we need the *global* integer
-    index, which PyG's NeighborLoader stores in batch[ntype].n_id.
-    We map: src_global = batch[src_type].n_id[src_local]
+    Leave-One-Out Perturbation Importance (Option 4):
+      importance(e) = p_original - p_ablated_without_e
+    Measures the direct drop in the predicted class probability when edge e is
+    removed from the subgraph. Batch-evaluated in chunks via Batch.from_data_list
+    for high computational throughput.
     """
+    # Disambiguate positional arguments for backwards compatibility
+    if module is None:
+        if name_lookup_or_grad is not None and (hasattr(name_lookup_or_grad, "forward") or hasattr(name_lookup_or_grad, "eval")):
+            module = name_lookup_or_grad
+    if name_lookup is None:
+        if isinstance(name_lookup_or_grad, dict) and not ("drug" in name_lookup_or_grad and isinstance(name_lookup_or_grad["drug"], torch.Tensor)):
+            name_lookup = name_lookup_or_grad
+    if grad_norms is None:
+        if isinstance(name_lookup_or_grad, dict) and ("drug" in name_lookup_or_grad and isinstance(name_lookup_or_grad["drug"], torch.Tensor)):
+            grad_norms = name_lookup_or_grad
+
     # Build local->global index maps for each node type present in this batch
     n_id_map: dict[str, torch.Tensor] = {}
     for ntype in batch.node_types:
@@ -173,7 +213,7 @@ def _score_edges(batch, grad_norms, name_lookup, top_k=10):
             n_id_map[ntype] = store.n_id.cpu()
 
     seen: set[tuple] = set()   # deduplicate (src_global, rel, dst_global)
-    scored_edges = []
+    candidate_edges = []
 
     for etype in batch.edge_types:
         src_type, rel, dst_type = etype
@@ -186,10 +226,8 @@ def _score_edges(batch, grad_norms, name_lookup, top_k=10):
         if ei.shape[1] == 0:
             continue
 
-        src_norms = grad_norms.get(src_type)
-        dst_norms = grad_norms.get(dst_type)
-        src_n_id  = n_id_map.get(src_type)
-        dst_n_id  = n_id_map.get(dst_type)
+        src_n_id = n_id_map.get(src_type)
+        dst_n_id = n_id_map.get(dst_type)
 
         for k in range(ei.shape[1]):
             src_local = ei[0, k].item()
@@ -204,19 +242,12 @@ def _score_edges(batch, grad_norms, name_lookup, top_k=10):
                 continue
             seen.add(dedup_key)
 
-            # Importance: gradient L2-norm at drug node (batch-local index)
-            imp_val = 0.01
-            if src_norms is not None and src_local < len(src_norms):
-                imp_val = max(imp_val, src_norms[src_local].item())
-            if dst_norms is not None and dst_local < len(dst_norms):
-                imp_val = max(imp_val, dst_norms[dst_local].item())
-            importance = imp_val
-
             # Resolve human-readable names using global indices
             src_name = _resolve_name(src_type, src_global, name_lookup)
             dst_name = _resolve_name(dst_type, dst_global, name_lookup)
 
-            scored_edges.append({
+            candidate_edges.append({
+                "etype":         etype,
                 "source_type":   src_type,
                 "source_local":  src_local,   # kept for faithfulness mask
                 "source_global": src_global,
@@ -226,11 +257,70 @@ def _score_edges(batch, grad_norms, name_lookup, top_k=10):
                 "target_local":  dst_local,
                 "target_global": dst_global,
                 "target":        dst_name,
-                "importance":    importance,
+                "importance":    0.01,
             })
 
-    scored_edges.sort(key=lambda e: e["importance"], reverse=True)
-    return scored_edges[:top_k], scored_edges
+    if len(candidate_edges) == 0:
+        return [], []
+
+    # 1. Leave-One-Out Perturbation Scoring (Option 4)
+    if module is not None:
+        module.eval()
+        with torch.no_grad():
+            if original_prob is None:
+                batch_dev = batch.to(device)
+                logits_base, _ = module(batch_dev)
+                probs_base = F.softmax(logits_base, dim=-1)
+                if probs_base.dim() == 2 and probs_base.shape[0] >= 2:
+                    p_orig = ((probs_base[0, pred_idx] + probs_base[1, pred_idx]) / 2.0).item()
+                else:
+                    p_orig = probs_base.squeeze(0)[pred_idx].item()
+            else:
+                p_orig = float(original_prob)
+
+            scores = []
+            for i in range(0, len(candidate_edges), chunk_size):
+                chunk = candidate_edges[i : i + chunk_size]
+                data_list = []
+                for edge_info in chunk:
+                    variant = batch.clone()
+                    etype = edge_info["etype"]
+                    src_l = edge_info["source_local"]
+                    dst_l = edge_info["target_local"]
+                    ei = variant[etype].edge_index
+                    mask = ~((ei[0] == src_l) & (ei[1] == dst_l))
+                    variant[etype].edge_index = ei[:, mask]
+                    data_list.append(variant)
+
+                batched_data = Batch.from_data_list(data_list).to(device)
+                logits_abl, _ = module(batched_data)
+                probs_abl = F.softmax(logits_abl, dim=-1)
+                # Each variant has 2 supervision pairs (forward and reverse ordering)
+                p_abl = (probs_abl[0::2, pred_idx] + probs_abl[1::2, pred_idx]) / 2.0
+                drop = (p_orig - p_abl).cpu().tolist()
+                scores.extend(drop)
+
+        for edge_info, score in zip(candidate_edges, scores):
+            edge_info["importance"] = float(score)
+
+    elif grad_norms is not None:
+        # Fallback to gradient saliency if module is not provided
+        src_norms = grad_norms.get("drug")
+        for edge_info in candidate_edges:
+            src_t = edge_info["source_type"]
+            dst_t = edge_info["target_type"]
+            src_l = edge_info["source_local"]
+            dst_l = edge_info["target_local"]
+            imp_val = 0.01
+            if src_t == "drug" and src_norms is not None and src_l < len(src_norms):
+                imp_val = max(imp_val, src_norms[src_l].item())
+            if dst_t == "drug" and src_norms is not None and dst_l < len(src_norms):
+                imp_val = max(imp_val, src_norms[dst_l].item())
+            edge_info["importance"] = imp_val
+
+    candidate_edges.sort(key=lambda e: e["importance"], reverse=True)
+    return candidate_edges[:top_k], candidate_edges
+
 
 
 # ---------------------------------------------------------------------------
@@ -499,7 +589,13 @@ def _necessity_check(
     module.eval()
     with torch.no_grad():
         logits_pruned, _ = module(batch_pruned)
-        probs_pruned      = F.softmax(logits_pruned, dim=-1).squeeze(0).cpu()
+        probs_raw = F.softmax(logits_pruned, dim=-1).cpu()
+        if probs_raw.dim() == 2 and probs_raw.shape[0] >= 2:
+            probs_pruned = (probs_raw[0] + probs_raw[1]) / 2.0
+        elif probs_raw.dim() == 2:
+            probs_pruned = probs_raw[0]
+        else:
+            probs_pruned = probs_raw
 
     ablated_score = probs_pruned[predicted_class].item()
     p_ant_pruned, p_add_pruned, p_syn_pruned = probs_pruned.tolist()
@@ -583,7 +679,13 @@ def _sufficiency_check(
     module.eval()
     with torch.no_grad():
         logits_suf, _ = module(batch_suf)
-        probs_suf      = F.softmax(logits_suf, dim=-1).squeeze(0).cpu()
+        probs_raw = F.softmax(logits_suf, dim=-1).cpu()
+        if probs_raw.dim() == 2 and probs_raw.shape[0] >= 2:
+            probs_suf = (probs_raw[0] + probs_raw[1]) / 2.0
+        elif probs_raw.dim() == 2:
+            probs_suf = probs_raw[0]
+        else:
+            probs_suf = probs_raw
 
     new_prob = probs_suf[predicted_class].item()
     p_ant_suf, p_add_suf, p_syn_suf = probs_suf.tolist()
@@ -622,6 +724,7 @@ def explain_prediction(
     run_faithfulness=True,
     run_literature=True,
     disease_context: Optional[str] = None,
+    use_cache: bool = True,
 ) -> dict[str, Any]:
     """
     Generate an interpretable explanation for a (drug_A, drug_B, cell_line) prediction.
@@ -657,43 +760,66 @@ def explain_prediction(
     drug_a_name = name_lookup["drug"].get(a_idx, drug_a_id)
     drug_b_name = name_lookup["drug"].get(b_idx, drug_b_id)
 
+    # Check in-memory explanation cache (canonical drug order)
+    d_min, d_max = min(drug_a_id, drug_b_id), max(drug_a_id, drug_b_id)
+    cache_key = (d_min, d_max, cell_line_name, top_k, run_faithfulness, run_literature, disease_context)
+    if use_cache and cache_key in _EXPLANATION_CACHE:
+        cached = copy.deepcopy(_EXPLANATION_CACHE[cache_key])
+        cached["drug_a"] = drug_a_id
+        cached["drug_b"] = drug_b_id
+        if drug_a_id != d_min:
+            cached["drug_a_name"], cached["drug_b_name"] = cached["drug_b_name"], cached["drug_a_name"]
+        return cached
+
+    # Obtain canonical symmetric synergy prediction from shared predict_synergy entry point
+    from predict import predict_synergy
+    pred_res = predict_synergy(
+        drug_a_id=drug_a_id,
+        drug_b_id=drug_b_id,
+        cell_line_name=cell_line_name,
+        module=module,
+        heterodata=heterodata,
+        threshold_synergy=threshold_synergy,
+        threshold_antagonism=threshold_antagonism,
+        device=device,
+    )
+    predicted_class_name = pred_res["prediction"]
+    p_ant = pred_res["p_antagonism"]
+    p_add = pred_res["p_additive"]
+    p_syn = pred_res["p_synergy"]
+    predicted_class_idx = CLASS_NAMES.index(predicted_class_name)
+    original_prob = {"antagonism": p_ant, "additive": p_add, "synergy": p_syn}[predicted_class_name]
+
     print(f"\n  [explain] Sampling subgraph for {drug_a_name} x {drug_b_name} @ {cell_line_name}...")
     batch = _sample_batch(heterodata, a_idx, b_idx, cell_idx)
 
-    # Forward + grad
+    # Forward pass to obtain baseline predicted class probability
     batch_dev = batch.to(device)
-    drug_feats = batch_dev["drug"].x.float().detach().requires_grad_(True)
-    batch_dev["drug"].x = drug_feats
-
     module.eval()
-    logits, _ = module(batch_dev)
-    probs  = F.softmax(logits, dim=-1).squeeze(0)
-    p_ant, p_add, p_syn = probs.tolist()
+    with torch.no_grad():
+        logits_base, _ = module(batch_dev)
+        probs_base = F.softmax(logits_base, dim=-1)
+        if probs_base.dim() == 2 and probs_base.shape[0] >= 2:
+            p_target = ((probs_base[0, predicted_class_idx] + probs_base[1, predicted_class_idx]) / 2.0).item()
+        else:
+            p_target = probs_base.squeeze(0)[predicted_class_idx].item()
 
-    if p_syn > threshold_synergy:
-        predicted_class_name = "synergy"
-        predicted_class_idx  = 2
-    elif p_ant > threshold_antagonism:
-        predicted_class_name = "antagonism"
-        predicted_class_idx  = 0
-    else:
-        predicted_class_name = "additive"
-        predicted_class_idx  = 1
-
-    original_prob = probs[predicted_class_idx].item()
     print(f"  [explain] Predicted: {predicted_class_name.upper()} "
           f"(p_syn={p_syn:.3f}, p_add={p_add:.3f}, p_ant={p_ant:.3f})")
 
-    # Backprop
-    probs[predicted_class_idx].backward()
-    drug_grad = drug_feats.grad
-    grad_norms = {}
-    if drug_grad is not None:
-        grad_norms["drug"] = drug_grad.norm(dim=-1).detach().cpu()
-
-    # Score edges using CPU batch (for name resolution)
-    top_edges, all_edges = _score_edges(batch, grad_norms, name_lookup, top_k=top_k)
-    print(f"  [explain] Top {len(top_edges)} explanation edges identified.")
+    # Score edges using direct leave-one-out perturbation (Option 4)
+    print(f"  [explain] Computing leave-one-out edge importance across candidate edges...")
+    top_edges, all_edges = _score_edges(
+        batch=batch,
+        name_lookup=name_lookup,
+        top_k=top_k,
+        module=module,
+        pred_idx=predicted_class_idx,
+        original_prob=p_target,
+        device=device,
+        chunk_size=64,
+    )
+    print(f"  [explain] Top {len(top_edges)} explanation edges identified via leave-one-out perturbation.")
 
     # ── Necessity & Sufficiency faithfulness checks (skipped during search) ─────────────────
     if run_faithfulness:
@@ -836,7 +962,7 @@ def explain_prediction(
         if e["relation"] != "drug_drug"   # exclude structural drug-drug edges
     ]
 
-    return {
+    result = {
         "drug_a":                      drug_a_id,
         "drug_a_name":                 drug_a_name,
         "drug_b":                      drug_b_id,
@@ -860,6 +986,11 @@ def explain_prediction(
         "sufficiency_class_preserved": suf_class_ok,
         "sufficiency_prob":            round(suf_prob, 6) if suf_prob is not None else None,
     }
+
+    if use_cache:
+        _EXPLANATION_CACHE[cache_key] = copy.deepcopy(result)
+
+    return result
 
 
 # ---------------------------------------------------------------------------

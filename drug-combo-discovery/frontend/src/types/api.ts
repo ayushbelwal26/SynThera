@@ -170,71 +170,6 @@ export interface SearchResponse {
   results: PredictionResult[];
 }
 
-export interface TripleBottleneckPair {
-  pair_key: string;
-  drug_1: string;
-  drug_2: string;
-  v_score: number;
-  p_synergy: number;
-  toxicity_penalty: number;
-}
-
-export interface TripleResult {
-  drug_a: string;
-  drug_a_name: string;
-  drug_b: string;
-  drug_b_name: string;
-  drug_c: string;
-  drug_c_name: string;
-  aggregate_min: number;
-  aggregate_mean: number;
-  score: number;
-  v_score: number;
-  triple_toxicity_penalty: number;
-  has_known_ddi: boolean | null;
-  bottleneck_pair: TripleBottleneckPair;
-  pair_ab: RankingBlock;
-  pair_ac: RankingBlock;
-  pair_bc: RankingBlock;
-  literature_all_three?: null | {
-    query_used: string;
-    citations: LiteratureCitation[];
-    count: number;
-    has_triple_literature: boolean;
-  };
-  composition_caption: string;
-  rank?: number;
-}
-
-export interface TriplePredictRequest {
-  drug_a: string;
-  drug_b: string;
-  drug_c: string;
-  cell_line: string;
-}
-
-export interface TripleSearchRequest {
-  disease: string;
-  cell_line: string;
-  max_candidates?: number;
-  top_k?: number;
-  time_budget_sec?: number;
-  w_synergy?: number;
-  w_toxicity?: number;
-  w_redundancy?: number;
-}
-
-export interface TripleSearchResponse {
-  disease: string;
-  cell_line: string;
-  candidate_pool_size: number;
-  n_triples_scored: number;
-  n_pairs_scored: number;
-  truncated: boolean;
-  time_taken_sec: number;
-  composition_caption: string;
-  results: TripleResult[];
-}
 
 export interface WhyNotRequest {
   disease: string;
@@ -313,3 +248,23 @@ export interface KGGraph {
   nodes: KGNode[];
   edges: KGEdge[];
 }
+
+export interface ChatAnalysisRequest {
+  message: string;
+  conversation_history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  context?: {
+    drug_a?: string;
+    drug_b?: string;
+    cell_line?: string;
+    disease?: string;
+    pair_analysis_id?: string;
+  };
+}
+
+export interface ChatAnalysisResponse {
+  response: string;
+  tools_used: string[];
+  tool_calls_count: number;
+  tool_results?: Array<Record<string, unknown>>;
+}
+

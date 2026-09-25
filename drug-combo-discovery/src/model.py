@@ -158,6 +158,10 @@ class SynergyGNN(nn.Module):
         dropout: float  = DROPOUT,
         enriched_pair_head: bool = False,
         use_target_features: bool = False,
+        use_chemberta: bool = False,
+        use_expression: bool = False,
+        expression_dim: int = 0,
+        use_dsn_spn: bool = False,
     ) -> None:
         super().__init__()
 
@@ -166,6 +170,10 @@ class SynergyGNN(nn.Module):
         self.dropout    = nn.Dropout(dropout)
         self.enriched_pair_head = enriched_pair_head
         self.use_target_features = use_target_features
+        self.use_chemberta = use_chemberta
+        self.use_expression = use_expression
+        self.expression_dim = expression_dim
+        self.use_dsn_spn = use_dsn_spn
         node_types = metadata[0]
 
         # ── Drug: hybrid feature module ───────────────────────────
@@ -173,6 +181,15 @@ class SynergyGNN(nn.Module):
         # Fallback : nn.Embedding(N_fallback, hidden_dim) — for biologics with no FP
         self.drug_fp_proj = nn.Linear(FP_DIM, hidden_dim, bias=False)
         nn.init.xavier_uniform_(self.drug_fp_proj.weight)
+
+        if use_chemberta:
+            # ChemBERTa path: Linear(768 -> hidden_dim)
+            self.drug_chemberta_proj = nn.Linear(768, hidden_dim, bias=False)
+            nn.init.xavier_uniform_(self.drug_chemberta_proj.weight)
+            # Fusion projection: [Morgan_128 || ChemBERTa_128] -> Linear(256 -> 128)
+            self.drug_fusion_proj = nn.Linear(hidden_dim * 2, hidden_dim, bias=False)
+            nn.init.xavier_uniform_(self.drug_fusion_proj.weight)
+            self._load_chemberta_buffer()
 
         self.drug_fallback_emb = nn.Embedding(num_fallback_drugs, hidden_dim)
         nn.init.xavier_uniform_(self.drug_fallback_emb.weight)
@@ -210,27 +227,59 @@ class SynergyGNN(nn.Module):
         ])
 
         # ── Cell-line context embedding ────────────────────────────
-        # Learned embedding per cell line, projected to hidden_dim.
-        # Concatenated with (emb_a, emb_b) before the scorer MLP.
+        # Default: Learned embedding per cell line, projected to hidden_dim.
+        # Experiment 4A alternative: CCLE gene expression projection.
         self.cell_line_emb  = nn.Embedding(num_cell_lines, NUM_CELL_LINE_DIM)
         self.cell_line_proj = nn.Linear(NUM_CELL_LINE_DIM, hidden_dim, bias=False)
         nn.init.xavier_uniform_(self.cell_line_emb.weight)
         nn.init.xavier_uniform_(self.cell_line_proj.weight)
 
-        # ── Pair-scorer MLP ───────────────────────────────────────
-        # Input: 5*hidden_dim (if enriched with hadamard + diff_abs) or 3*hidden_dim (baseline)
-        # Plus 4 if hand-crafted target-complementarity features are added (Run C)
-        extra_dim = 4 if use_target_features else 0
-        scorer_in_dim = hidden_dim * (5 if enriched_pair_head else 3) + extra_dim
-        self.scorer = nn.Sequential(
-            nn.Linear(scorer_in_dim, hidden_dim),
-            nn.ELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, 3),       # 3 classes
-        )
+        if use_expression and expression_dim > 0:
+            # Replace ID-embedding path with expression projection.
+            self.cell_line_expr_proj = nn.Linear(expression_dim, hidden_dim, bias=False)
+            nn.init.xavier_uniform_(self.cell_line_expr_proj.weight)
+            self._load_expression_buffer()
+
+        if use_dsn_spn:
+            # Drug-Specific Subnetwork: shared weights branch for each drug in cell context
+            self.dsn = nn.Sequential(
+                nn.Linear(hidden_dim * 2, hidden_dim),
+                nn.ELU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, hidden_dim),
+            )
+            # Synergy Prediction Network: explicitly permutation-symmetric interaction head
+            # Input: [z_sum || z_prod || z_diff || h_cell] (4 * hidden_dim = 512)
+            self.spn = nn.Sequential(
+                nn.Linear(hidden_dim * 4, hidden_dim),
+                nn.ELU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, 3),
+            )
+        else:
+            # ── Pair-scorer MLP ───────────────────────────────────────
+            # Input: 5*hidden_dim (if enriched with hadamard + diff_abs) or 3*hidden_dim (baseline)
+            # Plus 4 if hand-crafted target-complementarity features are added (Run C)
+            extra_dim = 4 if use_target_features else 0
+            scorer_in_dim = hidden_dim * (5 if enriched_pair_head else 3) + extra_dim
+            self.scorer = nn.Sequential(
+                nn.Linear(scorer_in_dim, hidden_dim),
+                nn.ELU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, 3),       # 3 classes
+            )
 
         if use_target_features:
             self._load_target_features_buffers()
+
+    def _load_expression_buffer(self) -> None:
+        """Loads precomputed CCLE gene expression matrix [80, expression_dim]."""
+        expr_path = os.path.join(ROOT, "data", "processed", "cell_line_expression.pt")
+        if os.path.exists(expr_path):
+            expr = torch.load(expr_path, weights_only=True, map_location="cpu")
+            self.register_buffer("expression_buffer", expr)
+        else:
+            print(f"  [WARNING] {expr_path} not found; expression_buffer not registered.")
 
     def _load_target_features_buffers(self) -> None:
         """Loads precomputed target complementarity lookup buffers for fast vectorized forward pass."""
@@ -242,6 +291,15 @@ class SynergyGNN(nn.Module):
             self.register_buffer("target_default_norm", data["default_norm"])
         else:
             print(f"  [WARNING] {lookup_pt} not found; target feature buffers not initialized.")
+
+    def _load_chemberta_buffer(self) -> None:
+        """Loads precomputed aligned ChemBERTa embeddings matrix [7946, 768]."""
+        mat_path = os.path.join(ROOT, "data", "processed", "drug_chemberta_matrix.pt")
+        if os.path.exists(mat_path):
+            mat = torch.load(mat_path, weights_only=False)
+            self.register_buffer("drug_chemberta_matrix", mat)
+        else:
+            print(f"  [WARNING] {mat_path} not found; drug_chemberta_matrix buffer not registered.")
 
     # ─────────────────────────────────────────────────────────────
     # Forward helpers
@@ -284,9 +342,26 @@ class SynergyGNN(nn.Module):
                     device=fp_feats.device,
                 )
 
-                # FP path: project real 2048-bit fingerprints → 128 dims (purely inductive)
-                if fp_mask.any():
-                    out[fp_mask] = self.drug_fp_proj(fp_feats[fp_mask])
+                if self.use_chemberta:
+                    # Combined Morgan + ChemBERTa molecular representation
+                    if hasattr(store, "chemberta_x") and store.chemberta_x is not None:
+                        chemb_feats = store.chemberta_x
+                    elif hasattr(self, "drug_chemberta_matrix") and hasattr(store, "n_id"):
+                        chemb_feats = self.drug_chemberta_matrix[store.n_id].to(fp_feats.device)
+                    elif hasattr(self, "drug_chemberta_matrix") and self.drug_chemberta_matrix.shape[0] == n_drug:
+                        chemb_feats = self.drug_chemberta_matrix.to(fp_feats.device)
+                    else:
+                        raise RuntimeError("use_chemberta=True but no chemberta features found in batch or buffer!")
+
+                    if fp_mask.any():
+                        m_128 = self.drug_fp_proj(fp_feats[fp_mask])
+                        c_128 = self.drug_chemberta_proj(chemb_feats[fp_mask])
+                        combined_256 = torch.cat([m_128, c_128], dim=-1)
+                        out[fp_mask] = self.drug_fusion_proj(combined_256)
+                else:
+                    # FP path: project real 2048-bit fingerprints → 128 dims (purely inductive)
+                    if fp_mask.any():
+                        out[fp_mask] = self.drug_fp_proj(fp_feats[fp_mask])
 
                 # Trainable drug ID embeddings disabled in forward path to ensure strict induction.
                 # (100% of labeled pairs have Morgan FPs; any fallback node receives zeros).
@@ -370,12 +445,24 @@ class SynergyGNN(nn.Module):
         emb_a      = drug_embs[src_local]
         emb_b      = drug_embs[dst_local]
 
-        # Cell-line embedding
-        emb_cell   = self.dropout(
-            self.cell_line_proj(
-                self.cell_line_emb(cell_ids.to(emb_a.device))
-            )
-        )                                             # [num_pairs, hidden_dim]
+        # Cell-line embedding: ID-based (default) or expression-based (Exp 4A)
+        if self.use_expression and hasattr(self, "cell_line_expr_proj") and hasattr(self, "expression_buffer"):
+            # Look up pre-standardised expression vector for each cell line in this batch
+            expr_vecs  = self.expression_buffer[cell_ids.to(emb_a.device)]  # [N_pairs, n_genes]
+            emb_cell   = self.dropout(
+                self.cell_line_expr_proj(expr_vecs)
+            )                                         # [num_pairs, hidden_dim]
+        else:
+            emb_cell   = self.dropout(
+                self.cell_line_proj(
+                    self.cell_line_emb(cell_ids.to(emb_a.device))
+                )
+            )                                         # [num_pairs, hidden_dim]
+
+        # DSN -> SPN explicitly permutation-symmetric architecture (Experiment 5)
+        if self.use_dsn_spn and hasattr(self, "dsn") and hasattr(self, "spn"):
+            logits = self.score_pair_dsn_spn(emb_a, emb_b, emb_cell)
+            return logits, labels
 
         # Pair representation: enriched (5*hidden_dim) or baseline (3*hidden_dim)
         if self.enriched_pair_head:
@@ -402,6 +489,38 @@ class SynergyGNN(nn.Module):
         logits     = self.scorer(pair_emb)                          # [num_pairs, 3]
 
         return logits, labels
+
+    def score_pair_dsn_spn(
+        self,
+        emb_a: torch.Tensor,
+        emb_b: torch.Tensor,
+        emb_cell: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        DSN -> SPN explicitly permutation-symmetric pair scoring:
+          1. Shared DSN maps each drug in cell context:
+             z_A = DSN([emb_a || emb_cell])
+             z_B = DSN([emb_b || emb_cell])
+          2. Symmetric interaction terms:
+             z_sum  = z_A + z_B
+             z_prod = z_A * z_B
+             z_diff = |z_A - z_B|
+          3. SPN prediction:
+             pair_repr = [z_sum || z_prod || z_diff || emb_cell]  (512 dims)
+             logits    = SPN(pair_repr)  (3 classes)
+        Permutation symmetry f(A, B, cell) == f(B, A, cell) holds mathematically by construction.
+        """
+        ctx_a = torch.cat([emb_a, emb_cell], dim=-1)
+        ctx_b = torch.cat([emb_b, emb_cell], dim=-1)
+        z_a = self.dsn(ctx_a)
+        z_b = self.dsn(ctx_b)
+
+        z_sum = z_a + z_b
+        z_prod = z_a * z_b
+        z_diff = torch.abs(z_a - z_b)
+
+        pair_emb = torch.cat([z_sum, z_prod, z_diff, emb_cell], dim=-1)
+        return self.spn(pair_emb)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -438,6 +557,10 @@ class SynergyModule(pl.LightningModule):
         dropout: float       = DROPOUT,
         enriched_pair_head: bool = False,
         use_target_features: bool = False,
+        use_chemberta: bool = False,
+        use_expression: bool = False,
+        expression_dim: int  = 0,
+        use_dsn_spn: bool    = False,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(ignore=["class_weights"])
@@ -453,13 +576,17 @@ class SynergyModule(pl.LightningModule):
             dropout            = dropout,
             enriched_pair_head = enriched_pair_head,
             use_target_features = use_target_features,
+            use_chemberta      = use_chemberta,
+            use_expression     = use_expression,
+            expression_dim     = expression_dim,
+            use_dsn_spn        = use_dsn_spn,
         )
 
         # Register class weights as buffer (moves to GPU with the module)
         if class_weights is not None:
             self.register_buffer("class_weights", class_weights.float())
         else:
-            self.register_buffer("class_weights", None)
+            self.register_buffer("class_weights", torch.ones(3))
 
         # Collectors for test-epoch metrics (cleared each test epoch)
         self._test_logits: list[torch.Tensor] = []
@@ -468,16 +595,68 @@ class SynergyModule(pl.LightningModule):
     def on_load_checkpoint(self, checkpoint: dict) -> None:
         """Adapts scorer input dimension to checkpoint weight shape (384 baseline, 388 target_features, 640 enriched)."""
         state_dict = checkpoint.get("state_dict", {})
-        weight = state_dict.get("model.scorer.0.weight")
-        if weight is not None and weight.shape[1] != self.model.scorer[0].in_features:
-            in_f = weight.shape[1]
-            is_enriched = (in_f in (self.model.hidden_dim * 5, self.model.hidden_dim * 5 + 4))
-            has_target = (in_f in (self.model.hidden_dim * 3 + 4, self.model.hidden_dim * 5 + 4))
-            self.model.enriched_pair_head = is_enriched
-            self.model.use_target_features = has_target
-            if has_target and not hasattr(self.model, "target_lookup_matrix"):
-                self.model._load_target_features_buffers()
-            self.model.scorer[0] = nn.Linear(in_f, self.model.hidden_dim, bias=True)
+        if "model.scorer.0.weight" in state_dict:
+            self.model.use_dsn_spn = False
+            if hasattr(self.model, "dsn"):
+                del self.model.dsn
+            if hasattr(self.model, "spn"):
+                del self.model.spn
+            weight = state_dict.get("model.scorer.0.weight")
+            if not hasattr(self.model, "scorer"):
+                self.model.scorer = nn.Sequential(
+                    nn.Linear(weight.shape[1], self.model.hidden_dim),
+                    nn.ELU(),
+                    nn.Dropout(0.3),
+                    nn.Linear(self.model.hidden_dim, 3),
+                )
+            elif weight.shape[1] != self.model.scorer[0].in_features:
+                in_f = weight.shape[1]
+                is_enriched = (in_f in (self.model.hidden_dim * 5, self.model.hidden_dim * 5 + 4))
+                has_target = (in_f in (self.model.hidden_dim * 3 + 4, self.model.hidden_dim * 5 + 4))
+                self.model.enriched_pair_head = is_enriched
+                self.model.use_target_features = has_target
+                if has_target and not hasattr(self.model, "target_lookup_matrix"):
+                    self.model._load_target_features_buffers()
+                self.model.scorer[0] = nn.Linear(in_f, self.model.hidden_dim, bias=True)
+
+        if "model.drug_chemberta_proj.weight" in state_dict:
+            self.model.use_chemberta = True
+            if not hasattr(self.model, "drug_chemberta_proj"):
+                self.model.drug_chemberta_proj = nn.Linear(768, self.model.hidden_dim, bias=False)
+                self.model.drug_fusion_proj = nn.Linear(self.model.hidden_dim * 2, self.model.hidden_dim, bias=False)
+                self.model._load_chemberta_buffer()
+
+        if "model.cell_line_expr_proj.weight" in state_dict or "model.expression_buffer" in state_dict:
+            if "model.cell_line_expr_proj.weight" in state_dict:
+                expr_w = state_dict["model.cell_line_expr_proj.weight"]
+                expr_in_dim = expr_w.shape[1]
+                self.model.use_expression = True
+                self.model.expression_dim = expr_in_dim
+                if not hasattr(self.model, "cell_line_expr_proj"):
+                    self.model.cell_line_expr_proj = nn.Linear(expr_in_dim, self.model.hidden_dim, bias=False)
+            if "model.expression_buffer" in state_dict:
+                self.model.register_buffer("expression_buffer", state_dict["model.expression_buffer"])
+            elif not hasattr(self.model, "expression_buffer"):
+                self.model._load_expression_buffer()
+
+        if "model.dsn.0.weight" in state_dict or "dsn.0.weight" in state_dict:
+            self.model.use_dsn_spn = True
+            if hasattr(self.model, "scorer"):
+                del self.model.scorer
+            if not hasattr(self.model, "dsn"):
+                self.model.dsn = nn.Sequential(
+                    nn.Linear(self.model.hidden_dim * 2, self.model.hidden_dim),
+                    nn.ELU(),
+                    nn.Dropout(0.3),
+                    nn.Linear(self.model.hidden_dim, self.model.hidden_dim),
+                )
+            if not hasattr(self.model, "spn"):
+                self.model.spn = nn.Sequential(
+                    nn.Linear(self.model.hidden_dim * 4, self.model.hidden_dim),
+                    nn.ELU(),
+                    nn.Dropout(0.3),
+                    nn.Linear(self.model.hidden_dim, 3),
+                )
 
     # ─────────────────────────────────────────────────────────────
     # Forward

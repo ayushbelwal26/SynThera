@@ -67,6 +67,8 @@ Configure optional environment variables in your environment or a `.env` file:
 |---|---|---|
 | `PORT` | `7860` | Port for FastAPI server. |
 | `NCBI_API_KEY` | *None* | **Recommended for production.** Setting a personal NCBI API key increases PubMed E-Utilities rate limits from 3 requests/sec to 10 requests/sec. |
+| `OPENROUTER_API_KEY` | *None* | **Required for Analysis chat assistant.** API key for OpenRouter (OpenAI-compatible API). OpenRouter bills per-token across whatever model is selected. |
+| `OPENROUTER_MODEL` | `openrouter/free` | Model string to route via OpenRouter. Defaults to `openrouter/free` which routes to free tool-calling models at $0.00 cost (zero token bill). |
 | `VITE_API_BASE_URL` | `http://localhost:7860` | Base URL used by the frontend to communicate with the backend. |
 
 ---

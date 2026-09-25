@@ -1,4 +1,4 @@
-﻿"""
+"""
 predict.py -- Drug Combination Synergy Inference Utility
 ========================================================
 
@@ -113,18 +113,37 @@ def load_model(
     return module, heterodata, device
 
 
+# Module-level cache for predicted pairs: (min(drug_a, drug_b), max(drug_a, drug_b), cell_line) -> dict
+_PREDICTION_CACHE: dict[tuple[str, str, str], dict[str, Any]] = {}
+
+
+def clear_prediction_cache() -> None:
+    """Clear all in-memory synergy prediction caches."""
+    global _PREDICTION_CACHE
+    _PREDICTION_CACHE.clear()
+
+
 def predict_synergy(
-    drug_a_id,
-    drug_b_id,
-    cell_line_name,
+    drug_a_id: str,
+    drug_b_id: str,
+    cell_line_name: str,
     module,
     heterodata,
-    threshold_synergy=THRESHOLD_SYNERGY,
-    threshold_antagonism=THRESHOLD_ANTAGONISM,
-    device="cpu",
-):
+    threshold_synergy: float = THRESHOLD_SYNERGY,
+    threshold_antagonism: float = THRESHOLD_ANTAGONISM,
+    device: str = "cpu",
+    use_cache: bool = True,
+) -> dict[str, Any]:
     """
-    Predict synergy class for a single (drug_A, drug_B, cell_line) triplet.
+    Predict synergy class for a single (drug_A, drug_B, cell_line) triplet with
+    order-invariance (Option A: Symmetric Inference Wrapper).
+
+    Computes forward (d_min -> d_max) and reverse (d_max -> d_min) pair passes
+    in a single 2-edge batch and averages the softmax probability distributions:
+        p_sym = (p(A, B) + p(B, A)) / 2.0
+    guaranteeing p(A, B) == p(B, A) strictly and eliminating order-dependence bugs.
+
+    Results are cached under canonical key: (min(drug_a_id, drug_b_id), max(drug_a_id, drug_b_id), cell_line_name).
 
     Parameters
     ----------
@@ -136,6 +155,7 @@ def predict_synergy(
     threshold_synergy    : override synergy threshold (default 0.25).
     threshold_antagonism : override antagonism threshold (default 0.33).
     device         : "cpu" or "cuda" (must match where module lives).
+    use_cache      : whether to lookup/store in canonical prediction cache (default True).
 
     Returns dict with keys:
         drug_a, drug_b, cell_line, prediction,
@@ -162,50 +182,60 @@ def predict_synergy(
             "error": "; ".join(errors),
         }
 
-    a_idx    = drug_id2idx[drug_a_id]
-    b_idx    = drug_id2idx[drug_b_id]
+    # Canonical order for invariant caching and evaluation
+    d_min, d_max = min(drug_a_id, drug_b_id), max(drug_a_id, drug_b_id)
+    cache_key = (d_min, d_max, cell_line_name)
+
+    if use_cache and cache_key in _PREDICTION_CACHE:
+        cached = dict(_PREDICTION_CACHE[cache_key])
+        cached["drug_a"] = drug_a_id
+        cached["drug_b"] = drug_b_id
+        return cached
+
+    min_idx  = drug_id2idx[d_min]
+    max_idx  = drug_id2idx[d_max]
     cell_idx = cell_line_map[cell_line_name]
 
-    # -- Build a minimal HeteroData clone with a single supervision edge -----
+    # Evaluate both orderings: forward (min -> max) and reverse (max -> min)
+    # Packed into a single LinkNeighborLoader batch for maximum performance.
     data_copy = heterodata.clone()
-
-    edge_index  = torch.tensor([[a_idx], [b_idx]], dtype=torch.long)   # [2, 1]
-    dummy_label = torch.tensor([[0, cell_idx]], dtype=torch.long)       # [1, 2]  class=0 dummy
+    edge_index = torch.tensor([[min_idx, max_idx], [max_idx, min_idx]], dtype=torch.long)
+    dummy_label = torch.tensor([[0, cell_idx], [0, cell_idx]], dtype=torch.long)
 
     data_copy["drug", "synergy_pair", "drug"].edge_index       = edge_index
     data_copy["drug", "synergy_pair", "drug"].edge_label_index = edge_index
     data_copy["drug", "synergy_pair", "drug"].edge_label       = dummy_label
 
-    # Neighborhood budget (small: we only need embeddings for the two drugs).
-    # We must include ALL edge types that exist in data_copy — including the
-    # synergy_pair edge we just added — otherwise LinkNeighborLoader raises a
-    # "Missing number of neighbors" ValueError.
-    # Use [0] for synergy_pair so it is never sampled as a message-passing edge
-    # (it is the supervision edge, used only for edge_label_index, not MP).
     num_neighbors = {
         et: ([0, 0] if et == ("drug", "synergy_pair", "drug") else [5, 3])
         for et in data_copy.edge_types
     }
+
+    # Reset PyTorch RNG for deterministic neighborhood sampling across consecutive calls
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
 
     loader = LinkNeighborLoader(
         data             = data_copy,
         num_neighbors    = num_neighbors,
         edge_label_index = (("drug", "synergy_pair", "drug"), edge_index),
         edge_label       = dummy_label,
-        batch_size       = 1,
+        batch_size       = 2,
         shuffle          = False,
     )
 
     module.eval()
     with torch.no_grad():
-        batch   = next(iter(loader))
-        batch   = batch.to(device)
-        logits, _ = module(batch)          # [1, 3]
+        batch = next(iter(loader)).to(device)
+        logits, _ = module(batch)          # [2, 3]
 
-    probs        = F.softmax(logits, dim=-1).squeeze(0).cpu().tolist()
-    p_ant, p_add, p_syn = probs
+    probs = F.softmax(logits, dim=-1)     # [2, 3]
+    # Symmetrized average over both permutations in S_2
+    p_sym = ((probs[0] + probs[1]) / 2.0).cpu().tolist()
+    p_ant, p_add, p_syn = p_sym
 
-    # -- Calibrated decision rule -------------------------------------------
+    # Calibrated decision rule
     if p_syn > threshold_synergy:
         prediction = "synergy"
     elif p_ant > threshold_antagonism:
@@ -213,15 +243,147 @@ def predict_synergy(
     else:
         prediction = "additive"
 
-    return {
-        "drug_a":       drug_a_id,
-        "drug_b":       drug_b_id,
+    canonical_result = {
+        "drug_a":       d_min,
+        "drug_b":       d_max,
         "cell_line":    cell_line_name,
         "prediction":   prediction,
         "p_antagonism": round(p_ant, 6),
         "p_additive":   round(p_add, 6),
         "p_synergy":    round(p_syn, 6),
     }
+
+    if use_cache:
+        _PREDICTION_CACHE[cache_key] = canonical_result
+
+    caller_result = dict(canonical_result)
+    caller_result["drug_a"] = drug_a_id
+    caller_result["drug_b"] = drug_b_id
+    return caller_result
+
+
+def predict_synergy_batch(
+    pairs: list[tuple[str, str]],
+    cell_line_name: str,
+    module,
+    heterodata,
+    threshold_synergy: float = THRESHOLD_SYNERGY,
+    threshold_antagonism: float = THRESHOLD_ANTAGONISM,
+    device: str = "cpu",
+    use_cache: bool = True,
+    batch_size: int = 32,
+) -> list[dict[str, Any]]:
+    """
+    Batched permutation-invariant synergy prediction for a list of (drug_a, drug_b) pairs.
+    Evaluates both orderings symmetrically and caches by canonical (d_min, d_max, cell_line).
+    """
+    cell_line_map = heterodata.cell_line_map
+    node_maps     = _get_node_maps(heterodata)
+    drug_id2idx   = node_maps.get("drug", {})
+
+    if cell_line_name not in cell_line_map:
+        raise ValueError(f"cell_line '{cell_line_name}' unknown.")
+    cell_idx = cell_line_map[cell_line_name]
+
+    results: list[dict[str, Any] | None] = [None] * len(pairs)
+    uncached_pairs: list[tuple[str, str]] = []
+    uncached_indices: list[int] = []
+
+    for i, (da, db) in enumerate(pairs):
+        if da not in drug_id2idx or db not in drug_id2idx:
+            results[i] = {
+                "drug_a": da, "drug_b": db, "cell_line": cell_line_name,
+                "prediction": None, "p_antagonism": None, "p_additive": None, "p_synergy": None,
+                "error": f"Invalid drug ID: '{da}' or '{db}' not in KG.",
+            }
+            continue
+
+        d_min, d_max = min(da, db), max(da, db)
+        cache_key = (d_min, d_max, cell_line_name)
+        if use_cache and cache_key in _PREDICTION_CACHE:
+            res = dict(_PREDICTION_CACHE[cache_key])
+            res["drug_a"] = da
+            res["drug_b"] = db
+            results[i] = res
+        else:
+            uncached_pairs.append((d_min, d_max))
+            uncached_indices.append(i)
+
+    if uncached_pairs:
+        # Deduplicate uncached canonical pairs to avoid duplicate evaluation
+        unique_uncached = list(dict.fromkeys(uncached_pairs))
+        n_unique = len(unique_uncached)
+
+        mins = [drug_id2idx[p[0]] for p in unique_uncached]
+        maxs = [drug_id2idx[p[1]] for p in unique_uncached]
+
+        # Forward (min -> max) and Reverse (max -> min) in one combined edge tensor
+        edge_index_all = torch.tensor([mins + maxs, maxs + mins], dtype=torch.long)
+        dummy_label_all = torch.tensor([[0, cell_idx]] * (2 * n_unique), dtype=torch.long)
+
+        data_copy = heterodata.clone()
+        data_copy["drug", "synergy_pair", "drug"].edge_index       = edge_index_all
+        data_copy["drug", "synergy_pair", "drug"].edge_label_index = edge_index_all
+        data_copy["drug", "synergy_pair", "drug"].edge_label       = dummy_label_all
+
+        num_neighbors = {
+            et: ([0, 0] if et == ("drug", "synergy_pair", "drug") else [5, 3])
+            for et in data_copy.edge_types
+        }
+
+        loader = LinkNeighborLoader(
+            data             = data_copy,
+            num_neighbors    = num_neighbors,
+            edge_label_index = (("drug", "synergy_pair", "drug"), edge_index_all),
+            edge_label       = dummy_label_all,
+            batch_size       = batch_size,
+            shuffle          = False,
+        )
+
+        all_logits = []
+        module.eval()
+        with torch.no_grad():
+            for batch in loader:
+                batch = batch.to(device)
+                logits, _ = module(batch)
+                all_logits.append(logits.cpu())
+
+        all_logits = torch.cat(all_logits, dim=0)
+        all_probs  = F.softmax(all_logits, dim=-1)
+
+        fwd_probs = all_probs[:n_unique]
+        rev_probs = all_probs[n_unique:]
+        sym_probs = ((fwd_probs + rev_probs) / 2.0).tolist()
+
+        for (d_min, d_max), p_sym in zip(unique_uncached, sym_probs):
+            p_ant, p_add, p_syn = p_sym
+            if p_syn > threshold_synergy:
+                pred = "synergy"
+            elif p_ant > threshold_antagonism:
+                pred = "antagonism"
+            else:
+                pred = "additive"
+
+            res_canon = {
+                "drug_a":       d_min,
+                "drug_b":       d_max,
+                "cell_line":    cell_line_name,
+                "prediction":   pred,
+                "p_antagonism": round(p_ant, 6),
+                "p_additive":   round(p_add, 6),
+                "p_synergy":    round(p_syn, 6),
+            }
+            if use_cache:
+                _PREDICTION_CACHE[(d_min, d_max, cell_line_name)] = res_canon
+
+        for idx, (da, db) in zip(uncached_indices, [pairs[i] for i in uncached_indices]):
+            d_min, d_max = min(da, db), max(da, db)
+            res = dict(_PREDICTION_CACHE[(d_min, d_max, cell_line_name)])
+            res["drug_a"] = da
+            res["drug_b"] = db
+            results[idx] = res
+
+    return results
 
 
 # ---------------------------------------------------------------------------

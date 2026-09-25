@@ -11,6 +11,7 @@ import {
   XCircle,
   Lock,
   Layers,
+  Info,
 } from 'lucide-react';
 import type { PredictionResult } from '../../types/api';
 import { ToxicityBadge } from '../common/ToxicityBadge';
@@ -21,6 +22,7 @@ interface ToxicityCardProps {
 
 export const ToxicityCard: React.FC<ToxicityCardProps> = ({ prediction }) => {
   const [weightsOpen, setWeightsOpen] = useState(false);
+  const [showSharedSideEffects, setShowSharedSideEffects] = useState(false);
 
   const ranking = prediction.ranking;
   const breakdown = ranking?.breakdown;
@@ -35,8 +37,7 @@ export const ToxicityCard: React.FC<ToxicityCardProps> = ({ prediction }) => {
   const sourceCoverage = breakdown?.source_coverage;
   const redundancyAvailable = breakdown?.redundancy_available ?? false;
   const redundancyPenalty = ranking?.redundancy_penalty ?? null;
-  const redundancyNote =
-    breakdown?.redundancy_note || 'TODO: Precompute target overlap for unindexed candidate pairs';
+  const hasRedundancy = redundancyAvailable && redundancyPenalty !== null;
 
   // Value function components
   const vScore = prediction.v_score ?? ranking?.v_score ?? prediction.score;
@@ -44,7 +45,7 @@ export const ToxicityCard: React.FC<ToxicityCardProps> = ({ prediction }) => {
   const toxPenalty = ranking?.toxicity_penalty ?? null;
 
   return (
-    <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-5 shadow-xs mb-6 space-y-5">
+    <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-5 shadow-xs mb-6 space-y-4">
       {/* Header & Multi-Objective Equation Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#E5E5E0] pb-4">
         <div>
@@ -104,8 +105,17 @@ export const ToxicityCard: React.FC<ToxicityCardProps> = ({ prediction }) => {
         </div>
       </div>
 
-      {/* Grid: 1. DDI Status | 2. SIDER Overlap | 3. Redundancy */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Persistent Clinical Interpretation Caveat */}
+      <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-md px-3.5 py-2.5 flex items-start gap-2.5 text-xs text-[#475569]">
+        <Info className="w-4 h-4 text-[#0D9488] shrink-0 mt-0.5" />
+        <p className="leading-relaxed">
+          <strong className="text-[#0F172A] font-semibold">Clinical Caveat:</strong>{' '}
+          Toxicity flags static database risk (PrimeKG DDI, SIDER). They do not model clinical dose scheduling or monitoring (e.g. PCV regimens may be standard of care despite high penalties).
+        </p>
+      </div>
+
+      {/* Grid: 1. DDI Status | 2. SIDER Overlap | 3. Redundancy (if available) */}
+      <div className={`grid grid-cols-1 ${hasRedundancy ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4`}>
         {/* 1. Drug-Drug Interaction (DDI) Status */}
         <div
           className={`p-4 rounded-lg border transition-all ${
@@ -213,21 +223,39 @@ export const ToxicityCard: React.FC<ToxicityCardProps> = ({ prediction }) => {
                   : 'MedDRA side-effect term intersection evaluated against SIDER 4.1 catalog.'}
               </p>
 
+              {/* Collapsed top shared side effects behind toggle */}
               {topSharedSideEffects && topSharedSideEffects.length > 0 && (
-                <div className="mt-2.5 flex flex-wrap gap-1">
-                  {topSharedSideEffects.slice(0, 4).map((se, i) => (
-                    <span
-                      key={i}
-                      className="text-[10px] bg-[#FFFFFF] border border-[#CBD5E1] text-[#334155] px-1.5 py-0.5 rounded font-mono truncate max-w-[140px]"
-                      title={se}
-                    >
-                      {se}
-                    </span>
-                  ))}
-                  {topSharedSideEffects.length > 4 && (
-                    <span className="text-[10px] text-[#64748B] px-1 py-0.5 font-mono">
-                      +{topSharedSideEffects.length - 4} more
-                    </span>
+                <div className="mt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowSharedSideEffects(!showSharedSideEffects)}
+                    className="text-[11px] font-medium text-[#0D9488] hover:text-[#0F766E] flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    {showSharedSideEffects ? (
+                      <>
+                        <ChevronUp className="w-3.5 h-3.5" />
+                        Hide shared side effects
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="w-3.5 h-3.5" />
+                        Show shared side effects ({topSharedSideEffects.length})
+                      </>
+                    )}
+                  </button>
+
+                  {showSharedSideEffects && (
+                    <div className="mt-2 pt-2 border-t border-[#E2E8F0] flex flex-wrap gap-1 max-h-32 overflow-y-auto pr-1">
+                      {topSharedSideEffects.map((se, i) => (
+                        <span
+                          key={i}
+                          className="text-[10px] bg-[#FFFFFF] border border-[#CBD5E1] text-[#334155] px-1.5 py-0.5 rounded font-mono"
+                          title={se}
+                        >
+                          {se}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
@@ -251,61 +279,45 @@ export const ToxicityCard: React.FC<ToxicityCardProps> = ({ prediction }) => {
           </div>
         </div>
 
-        {/* 3. Target / Pathway Redundancy */}
-        <div
-          className={`p-4 rounded-lg border transition-all ${
-            redundancyAvailable && redundancyPenalty !== null
-              ? 'bg-[#F8FAFC] border-[#E2E8F0]'
-              : 'bg-[#F8FAFC] border-[#E2E8F0]'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#475569] flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-[#7C3AED]" />
-              Target Redundancy
-            </span>
-            <span
-              className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase ${
-                redundancyAvailable && redundancyPenalty !== null
-                  ? 'bg-[#EDE9FE] text-[#5B21B6]'
-                  : 'bg-[#F1F5F9] text-[#64748B]'
-              }`}
-            >
-              {redundancyAvailable && redundancyPenalty !== null ? 'Phase A' : 'Pending'}
-            </span>
-          </div>
+        {/* 3. Target / Pathway Redundancy (Rendered only when indexed) */}
+        {hasRedundancy && (
+          <div className="p-4 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] transition-all">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#475569] flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-[#7C3AED]" />
+                Target Redundancy
+              </span>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase bg-[#EDE9FE] text-[#5B21B6]">
+                Phase A
+              </span>
+            </div>
 
-          {redundancyAvailable && redundancyPenalty !== null ? (
-            <>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="font-mono text-xl font-bold text-[#5B21B6]">
-                  {(redundancyPenalty * 100).toFixed(1)}%
-                </span>
-                <span className="text-xs text-[#64748B]">Target Jaccard</span>
-              </div>
-              <p className="text-xs text-[#475569] leading-relaxed">
-                Target complementarity overlap precomputed from PrimeKG PPI network in Phase A. Subtracted from V(pair) with weight w_redundancy.
-              </p>
-            </>
-          ) : (
-            <>
-              <div className="font-semibold text-sm mb-1 text-[#475569]">
-                Redundancy Penalty: None
-              </div>
-              <p className="text-xs font-mono text-[#64748B] bg-[#F1F5F9] border border-[#E2E8F0] p-2 rounded leading-relaxed">
-                {redundancyNote}
-              </p>
-            </>
-          )}
+            <div className="flex items-baseline gap-2 mb-1">
+              <span className="font-mono text-xl font-bold text-[#5B21B6]">
+                {(redundancyPenalty * 100).toFixed(1)}%
+              </span>
+              <span className="text-xs text-[#64748B]">Target Jaccard</span>
+            </div>
+            <p className="text-xs text-[#475569] leading-relaxed">
+              Target complementarity overlap precomputed from PrimeKG PPI network in Phase A. Subtracted from V(pair) with weight w_redundancy.
+            </p>
 
-          <div className="mt-3 pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[11px] font-mono text-[#64748B]">
-            <span>redundancy_penalty:</span>
-            <strong className="text-[#0F172A]">
-              {redundancyPenalty !== null ? redundancyPenalty.toFixed(4) : 'None'}
-            </strong>
+            <div className="mt-3 pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[11px] font-mono text-[#64748B]">
+              <span>redundancy_penalty:</span>
+              <strong className="text-[#0F172A]">
+                {redundancyPenalty.toFixed(4)}
+              </strong>
+            </div>
           </div>
-        </div>
+        )}
       </div>
+
+      {/* Muted indicator when target redundancy is unindexed */}
+      {!hasRedundancy && (
+        <p className="text-[11px] text-[#64748B] font-mono italic px-0.5">
+          Target redundancy: not indexed for this pair
+        </p>
+      )}
 
       {/* Source Coverage Audit Row */}
       <div className="p-3.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg">

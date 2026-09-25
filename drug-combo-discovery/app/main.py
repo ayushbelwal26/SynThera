@@ -61,6 +61,7 @@ from ranking import (
     DEFAULT_W_TOXICITY,
     DEFAULT_W_REDUNDANCY,
 )
+from familiarity import get_drug_familiarity, get_pair_familiarity
 
 # File paths
 CHECKPOINT_PATH = os.path.join(ROOT_DIR, "models", "synergy_gnn_final.ckpt")
@@ -87,6 +88,14 @@ def _initialize_app_state():
     """Load model, heterodata, build alias maps, and prepare dropdown lists."""
     global MODULE, HETERODATA, DEVICE
     global DRUG_LIST, DRUG_ALIAS_MAP, DRUG_ID_TO_NAME, CELL_LINE_LIST, CELL_LINE_ALIAS_MAP
+    global PREDICTION_CACHE
+
+    PREDICTION_CACHE.clear()
+    try:
+        from predict import clear_prediction_cache
+        clear_prediction_cache()
+    except Exception:
+        pass
 
     print("=" * 65)
     print("  Initializing SynThera FastAPI Service...")
@@ -255,6 +264,7 @@ class TriplePredictRequest(BaseModel):
     drug_b: str = Field(..., description="Second drug name or DrugBank ID (e.g. 'DB00262' or 'Carmustine')")
     drug_c: str = Field(..., description="Third drug name or DrugBank ID (e.g. 'DB00541' or 'Vincristine')")
     cell_line: str = Field(..., description="Target cell line context (e.g. 'T98G')")
+    disease: Optional[str] = Field(None, description="Optional target disease context (e.g. 'glioblastoma')")
 
     model_config = {
         "json_schema_extra": {
@@ -263,6 +273,7 @@ class TriplePredictRequest(BaseModel):
                 "drug_b": "Carmustine",
                 "drug_c": "Vincristine",
                 "cell_line": "T98G",
+                "disease": "glioblastoma",
             }
         }
     }
@@ -386,10 +397,20 @@ def predict(request: PredictRequest) -> Dict[str, Any]:
     if cache_key in PREDICTION_CACHE:
         cached_result = dict(PREDICTION_CACHE[cache_key])
         cached_result["cached"] = True
+        cached_result["drug_a"] = drug_a_id
+        cached_result["drug_b"] = drug_b_id
+        cached_result["drug_a_name"] = DRUG_ID_TO_NAME.get(drug_a_id, drug_a_id)
+        cached_result["drug_b_name"] = DRUG_ID_TO_NAME.get(drug_b_id, drug_b_id)
+        cached_result["drug_a_familiarity"] = get_drug_familiarity(drug_a_id)
+        cached_result["drug_b_familiarity"] = get_drug_familiarity(drug_b_id)
+        cached_result["pair_familiarity"] = get_pair_familiarity(drug_a_id, drug_b_id)
         return cached_result
 
     # 5. Run inference and explanation pipeline (with real in-silico ablation and literature RAG)
     try:
+        torch.manual_seed(42)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(42)
         result = explain_prediction(
             drug_a_id=drug_a_id,
             drug_b_id=drug_b_id,
@@ -415,6 +436,11 @@ def predict(request: PredictRequest) -> Dict[str, Any]:
     ranking_data = compute_pair_score_v(drug_a_id, drug_b_id, p_synergy=p_syn)
     result["ranking"] = ranking_data
     result["v_score"] = ranking_data["v_score"]
+
+    # 6b. Attach applicability domain / prediction familiarity indicators
+    result["drug_a_familiarity"] = get_drug_familiarity(drug_a_id)
+    result["drug_b_familiarity"] = get_drug_familiarity(drug_b_id)
+    result["pair_familiarity"] = get_pair_familiarity(drug_a_id, drug_b_id)
 
     # 7. Store in cache
     result["cached"] = False
@@ -655,9 +681,14 @@ def predict_triple(request: TriplePredictRequest) -> Dict[str, Any]:
         cache_key = (tuple(sorted([d1_id, d2_id])), canonical_cell_line, "")
         if cache_key in PREDICTION_CACHE:
             cached = PREDICTION_CACHE[cache_key]
+            if "ranking" in cached and cached["ranking"] is not None:
+                ranking = dict(cached["ranking"])
+                if "explanation_text" not in ranking or not ranking["explanation_text"]:
+                    ranking["explanation_text"] = cached.get("explanation_text", f"Calibrated {ranking.get('predicted_class', 'synergy').upper()} confidence: {ranking.get('p_synergy', 0.0):.1%}")
+                return ranking
             p_syn = cached.get("p_synergy", 0.0)
             ranking = compute_pair_score_v(d1_id, d2_id, p_synergy=p_syn)
-            ranking["explanation_text"] = cached.get("explanation_text", "")
+            ranking["explanation_text"] = cached.get("explanation_text", f"Calibrated {cached.get('predicted_class', 'synergy').upper()} confidence: {p_syn:.1%}")
             ranking["predicted_class"] = cached.get("predicted_class", "synergy")
             return ranking
 
@@ -665,15 +696,14 @@ def predict_triple(request: TriplePredictRequest) -> Dict[str, Any]:
             torch.manual_seed(42)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(42)
-            pred = explain_prediction(
+            from predict import predict_synergy
+            pred = predict_synergy(
                 drug_a_id=d1_id,
                 drug_b_id=d2_id,
                 cell_line_name=canonical_cell_line,
                 module=MODULE,
                 heterodata=HETERODATA,
                 device=DEVICE,
-                run_faithfulness=False,
-                run_literature=False,
             )
         except Exception as e:
             raise HTTPException(
@@ -686,8 +716,8 @@ def predict_triple(request: TriplePredictRequest) -> Dict[str, Any]:
 
         p_syn = pred.get("p_synergy", 0.0)
         ranking = compute_pair_score_v(d1_id, d2_id, p_synergy=p_syn)
-        ranking["explanation_text"] = pred.get("explanation_text", "")
-        ranking["predicted_class"] = pred.get("predicted_class", "synergy")
+        ranking["explanation_text"] = f"Calibrated {pred.get('prediction', 'synergy').upper()} confidence: {p_syn:.1%}"
+        ranking["predicted_class"] = pred.get("prediction", "synergy")
 
         # Cache pair prediction for subsequent targeted pair queries
         pred["ranking"] = ranking
@@ -713,6 +743,79 @@ def predict_triple(request: TriplePredictRequest) -> Dict[str, Any]:
         pair_ac=ranking_ac,
         pair_bc=ranking_bc,
     )
+
+    # Attach compound familiarity indicators
+    composed["drug_a_familiarity"] = get_drug_familiarity(drug_a_id)
+    composed["drug_b_familiarity"] = get_drug_familiarity(drug_b_id)
+    composed["drug_c_familiarity"] = get_drug_familiarity(drug_c_id)
+
+    # Attach real explanation + PubMed to the bottleneck pair only
+    bottleneck_info = composed.get("bottleneck_pair", {})
+    bottleneck_key = bottleneck_info.get("pair_key")
+    if bottleneck_key == "pair_ac":
+        btn_d1_id, btn_d2_id = drug_a_id, drug_c_id
+        btn_d1_name, btn_d2_name = drug_a_name, drug_c_name
+        orig_btn_ranking = ranking_ac
+    elif bottleneck_key == "pair_bc":
+        btn_d1_id, btn_d2_id = drug_b_id, drug_c_id
+        btn_d1_name, btn_d2_name = drug_b_name, drug_c_name
+        orig_btn_ranking = ranking_bc
+    else:  # pair_ab or fallback
+        btn_d1_id, btn_d2_id = drug_a_id, drug_b_id
+        btn_d1_name, btn_d2_name = drug_a_name, drug_b_name
+        orig_btn_ranking = ranking_ab
+
+    disease_raw = request.disease.strip() if request.disease else None
+
+    # Check cache for full bottleneck prediction first
+    btn_cache_key = (tuple(sorted([btn_d1_id, btn_d2_id])), canonical_cell_line, (disease_raw or "").lower())
+    btn_pred = None
+    if btn_cache_key in PREDICTION_CACHE:
+        cached_entry = PREDICTION_CACHE[btn_cache_key]
+        if cached_entry.get("faithfulness") is not None and cached_entry.get("literature") is not None:
+            btn_pred = dict(cached_entry)
+
+    if btn_pred is None:
+        try:
+            torch.manual_seed(42)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(42)
+            btn_pred = explain_prediction(
+                drug_a_id=btn_d1_id,
+                drug_b_id=btn_d2_id,
+                cell_line_name=canonical_cell_line,
+                module=MODULE,
+                heterodata=HETERODATA,
+                device=DEVICE,
+                run_faithfulness=True,
+                run_literature=True,
+                disease_context=disease_raw,
+            )
+            ranking_btn = dict(orig_btn_ranking)
+            ranking_btn["explanation_text"] = btn_pred.get("explanation_text", orig_btn_ranking.get("explanation_text", ""))
+            btn_pred["ranking"] = ranking_btn
+            btn_pred["v_score"] = ranking_btn["v_score"]
+            PREDICTION_CACHE[btn_cache_key] = btn_pred
+        except Exception:
+            btn_pred = {}
+
+    bottleneck_inspect = {
+        "top_edges": btn_pred.get("top_edges", []),
+        "explanation_text": btn_pred.get("explanation_text", ""),
+        "faithfulness": btn_pred.get("faithfulness"),
+        "supporting_literature": btn_pred.get("supporting_literature", []),
+        "drug_a": btn_d1_id,
+        "drug_b": btn_d2_id,
+        "drug_a_name": btn_d1_name,
+        "drug_b_name": btn_d2_name,
+        "p_synergy": btn_pred.get("p_synergy", bottleneck_info.get("p_synergy", 0.0)),
+        "predicted_class": btn_pred.get("predicted_class", "synergy"),
+        "drug_a_familiarity": get_drug_familiarity(btn_d1_id),
+        "drug_b_familiarity": get_drug_familiarity(btn_d2_id),
+        "pair_familiarity": get_pair_familiarity(btn_d1_id, btn_d2_id),
+    }
+    composed["bottleneck_inspect"] = bottleneck_inspect
+
     return composed
 
 
@@ -746,6 +849,17 @@ def why_not(request: WhyNotRequest) -> Dict[str, Any]:
         run_literature=True,
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Chat Subsystem Router (OpenRouter Tool-Calling Agent)
+# ---------------------------------------------------------------------------
+try:
+    from app.chat import router as chat_router
+    app.include_router(chat_router)
+except ImportError:
+    from chat import router as chat_router
+    app.include_router(chat_router)
 
 
 # ---------------------------------------------------------------------------
