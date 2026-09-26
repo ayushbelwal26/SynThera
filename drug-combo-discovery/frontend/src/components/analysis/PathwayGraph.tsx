@@ -117,7 +117,7 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
     nodesMap.set(drugBName, { type: "drug", label: drugBName, isHub: true });
 
     // Deduce node types and register entities from edges
-    topEdges.forEach((e) => {
+    (topEdges || []).forEach((e) => {
       const deduceType = (
         name: string,
         explicitType?: string,
@@ -190,7 +190,7 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
       });
     });
 
-    const edgesList: Edge[] = topEdges.map((e, idx) => {
+    const edgesList: Edge[] = (topEdges || []).map((e, idx) => {
       const importanceNorm = Math.max(0.1, Math.min(1.0, e.importance));
       const strokeWidth = 1.5 + importanceNorm * 2.5;
 
@@ -253,7 +253,7 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
             </h3>
           </div>
           <p className="meta-text mt-0.5">
-            Local subgraph · {topEdges.length} top edges
+            Local subgraph · {(topEdges || []).length} top edges
           </p>
         </div>
 
@@ -284,12 +284,12 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
         </div>
       </div>
 
-      <div className="border-l-2 border-[#1A535C] pl-3 py-2 mb-3 text-[13px]">
-        <span className="bench-label block mb-0.5">Mechanistic reasoning</span>
+      <div className="border-l-2 border-[#1A535C] pl-3 py-2 mb-3 text-[13px] bg-[#E8EDE0]/30">
+        <span className="bench-label block mb-0.5 text-[#1A535C]">Mechanistic reasoning</span>
         <p className="text-[#4A524C] leading-relaxed">{explanationText}</p>
       </div>
 
-      <div className="h-[420px] w-full border border-[#CFC9BC] overflow-hidden relative bg-[#F0EEE6]">
+      <div className="h-[480px] w-full border border-[#CFC9BC] overflow-hidden relative bg-[#F4F3ED] shadow-inner">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -307,17 +307,21 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
           <Controls showInteractive={false} />
         </ReactFlow>
 
-        <div className="absolute top-2 left-4 pointer-events-none flex gap-[180px] text-[10px] text-[#8A918C]">
+        <div className="absolute top-2 left-3 pointer-events-none z-10 flex items-center gap-2 text-[10px] font-mono text-[#6B746C] bg-[#FFFEF8]/90 px-2.5 py-1 border border-[#CFC9BC]/80 backdrop-blur-sm">
+          <span className="font-semibold text-[#1A535C]">Biological Axis:</span>
           <span>Compounds</span>
+          <span>→</span>
           <span>Targets</span>
+          <span>→</span>
           <span>Pathways</span>
+          <span>→</span>
           <span>Indications</span>
         </div>
       </div>
 
-      <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[#6B746C]">
-        <span>Click a node or edge to inspect</span>
-        <span>Line thickness = attribution weight</span>
+      <div className="mt-2.5 flex items-center justify-between gap-3 text-[11px] text-[#6B746C]">
+        <span>Click any node or edge to open the inspection inspector</span>
+        <span className="font-mono">Line thickness = attribution gradient weight</span>
       </div>
     </div>
   );

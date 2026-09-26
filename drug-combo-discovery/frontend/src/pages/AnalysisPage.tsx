@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Network, Table, ArrowRight } from "lucide-react";
 import { useApp } from "../services/AppContext";
 import { PredictionHeader } from "../components/analysis/PredictionHeader";
 import { ProbabilityVector } from "../components/analysis/ProbabilityVector";
@@ -60,7 +61,7 @@ export const AnalysisPage: React.FC = () => {
   const [isLoadingBenchmark, setIsLoadingBenchmark] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatWidth, setChatWidth] = useState(380);
-  const [showGraphViz, setShowGraphViz] = useState(false);
+  const [graphViewMode, setGraphViewMode] = useState<"graph" | "table">("graph");
 
   const handleQuickLoadBenchmark = async (index: number) => {
     const preset = BENCHMARKS[index];
@@ -144,30 +145,68 @@ export const AnalysisPage: React.FC = () => {
 
         <Section
           num="3.2"
-          title="Graph evidence"
-          blurb="Attributed PrimeKG edges driving the prediction, ranked by saliency."
+          title="Graph evidence & interaction map"
+          blurb="Attributed PrimeKG subgraph driving the synergy prediction, showing drug-target binding, pathway convergence, and disease connections."
         >
-          <GraphEvidenceTable
-            edges={currentPrediction.top_edges || []}
-            explanationText={currentPrediction.explanation_text}
-          />
-          <button
-            type="button"
-            onClick={() => setShowGraphViz((v) => !v)}
-            className="mt-3 text-[12px] text-[#6B746C] hover:text-[#1A535C]"
-          >
-            {showGraphViz ? "Hide graph view" : "Show interactive graph"}
-          </button>
-          {showGraphViz && (
-            <div className="mt-4 bench-panel-flush overflow-hidden">
+          {/* View Mode Toggle Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[#CFC9BC]">
+            <div className="flex items-center gap-1 bg-[#E8EDE0]/70 p-1 border border-[#CFC9BC]">
+              <button
+                type="button"
+                onClick={() => setGraphViewMode("graph")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                  graphViewMode === "graph"
+                    ? "bg-[#1A535C] text-white shadow-sm"
+                    : "text-[#4A524C] hover:text-[#1A1F1C]"
+                }`}
+              >
+                <Network className="w-3.5 h-3.5" />
+                <span>Interactive Network Graph</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setGraphViewMode("table")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                  graphViewMode === "table"
+                    ? "bg-[#1A535C] text-white shadow-sm"
+                    : "text-[#4A524C] hover:text-[#1A1F1C]"
+                }`}
+              >
+                <Table className="w-3.5 h-3.5" />
+                <span>Attribution Edge Table</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-[12px] text-[#6B746C] font-mono">
+                {(currentPrediction.top_edges || []).length} attributed edges
+              </span>
+              <button
+                type="button"
+                onClick={() => navigate("/graph")}
+                className="text-[12px] text-[#1A535C] hover:underline flex items-center gap-1 font-medium"
+              >
+                <span>Full Graph Explorer</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          {graphViewMode === "graph" ? (
+            <div className="bench-panel-flush overflow-hidden bg-[#FFFEFB] border border-[#CFC9BC]">
               <PathwayGraph
-                topEdges={currentPrediction.top_edges}
+                topEdges={currentPrediction.top_edges || []}
                 drugAName={currentPrediction.drug_a_name}
                 drugBName={currentPrediction.drug_b_name}
                 explanationText={currentPrediction.explanation_text}
                 onSelectEntity={setSelectedEntity}
               />
             </div>
+          ) : (
+            <GraphEvidenceTable
+              edges={currentPrediction.top_edges || []}
+              explanationText={currentPrediction.explanation_text}
+            />
           )}
         </Section>
 
