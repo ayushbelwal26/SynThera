@@ -1,45 +1,45 @@
-import React from 'react';
-import { AlertCircle, Info, CheckCircle2, ShieldAlert } from 'lucide-react';
+import React from "react";
+import { AlertCircle, Info, CheckCircle2, ShieldAlert } from "lucide-react";
 
 interface AlertNoticeProps {
-  type?: 'info' | 'warning' | 'error' | 'success';
+  type?: "info" | "warning" | "error" | "success";
   title?: string;
   children: React.ReactNode;
   className?: string;
 }
 
 export const AlertNotice: React.FC<AlertNoticeProps> = ({
-  type = 'info',
+  type = "info",
   title,
   children,
-  className = '',
+  className = "",
 }) => {
   const styles = {
     info: {
-      container: 'bg-[#F8FAFC] border-[#CBD5E1] text-[#334155]',
-      icon: <Info className="w-4 h-4 text-[#475569] shrink-0 mt-0.5" />,
-      titleColor: 'text-[#1E293B]',
+      container: "bg-[#EEF5F8] border-[#D0DCE6] text-[#3A4D5C]",
+      icon: <Info className="w-4 h-4 text-[#3B82B8] shrink-0 mt-0.5" />,
+      titleColor: "text-[#1A2B3C]",
     },
     warning: {
-      container: 'bg-[#FFFBEB] border-[#FDE68A] text-[#92400E]',
-      icon: <AlertCircle className="w-4 h-4 text-[#D97706] shrink-0 mt-0.5" />,
-      titleColor: 'text-[#B45309]',
+      container: "bg-[#FBF6E9] border-[#E5D4A8] text-[#6B4E24]",
+      icon: <AlertCircle className="w-4 h-4 text-[#B8893D] shrink-0 mt-0.5" />,
+      titleColor: "text-[#9A712F]",
     },
     error: {
-      container: 'bg-[#FEF2F2] border-[#FECACA] text-[#991B1B]',
-      icon: <ShieldAlert className="w-4 h-4 text-[#DC2626] shrink-0 mt-0.5" />,
-      titleColor: 'text-[#B91C1C]',
+      container: "bg-[#FBEDEF] border-[#E8BFC8] text-[#9A4050]",
+      icon: <ShieldAlert className="w-4 h-4 text-[#C45C6A] shrink-0 mt-0.5" />,
+      titleColor: "text-[#B84A5A]",
     },
     success: {
-      container: 'bg-[#ECFDF5] border-[#A7F3D0] text-[#065F46]',
-      icon: <CheckCircle2 className="w-4 h-4 text-[#059669] shrink-0 mt-0.5" />,
-      titleColor: 'text-[#047857]',
+      container: "bg-[#E6F7F5] border-[#A5D9D4] text-[#0A5F5C]",
+      icon: <CheckCircle2 className="w-4 h-4 text-[#0F9B8F] shrink-0 mt-0.5" />,
+      titleColor: "text-[#0D9488]",
     },
   }[type];
 
   return (
     <div
-      className={`border rounded-md p-3.5 flex items-start gap-3 text-xs leading-relaxed ${styles.container} ${className}`}
+      className={`border rounded-md p-3.5 flex items-start gap-3 text-xs leading-normal ${styles.container} ${className}`}
     >
       {styles.icon}
       <div className="flex-1">

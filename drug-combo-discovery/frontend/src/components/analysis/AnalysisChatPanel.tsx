@@ -1,8 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   MessageSquare,
-  ChevronDown,
-  ChevronUp,
   Send,
   Bot,
   User,
@@ -10,13 +8,14 @@ import {
   Loader2,
   AlertCircle,
   HelpCircle,
-} from 'lucide-react';
-import { sendAnalysisChatMessage } from '../../services/api';
-import type { PredictionResult } from '../../types/api';
+  PanelRightClose,
+} from "lucide-react";
+import { sendAnalysisChatMessage } from "../../services/api";
+import type { PredictionResult } from "../../types/api";
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   toolsUsed?: string[];
   timestamp: string;
@@ -24,60 +23,168 @@ interface Message {
 
 interface AnalysisChatPanelProps {
   prediction: PredictionResult;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  width: number;
+  onWidthChange: (w: number) => void;
 }
 
-export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({ prediction }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [inputMessage, setInputMessage] = useState('');
+const MIN_W = 300;
+const MAX_W = 520;
+
+const now = () =>
+  new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+function buildDummyReply(
+  question: string,
+  prediction: PredictionResult,
+): { content: string; toolsUsed: string[] } {
+  const pair = `${prediction.drug_a_name} + ${prediction.drug_b_name}`;
+  const q = question.toLowerCase();
+
+  if (q.includes("mechanism") || q.includes("biological")) {
+    return {
+      toolsUsed: ["predict_pair"],
+      content:
+        `[Demo] For ${pair} in ${prediction.cell_line}, shared pathway edges around DNA damage / repair are highlighted. ` +
+        `Class: ${prediction.predicted_class} (p_syn ≈ ${prediction.p_synergy?.toFixed(3) ?? "n/a"}).`,
+    };
+  }
+  if (q.includes("pubmed") || q.includes("paper") || q.includes("literature")) {
+    return {
+      toolsUsed: ["get_literature"],
+      content: `[Demo] Literature preview for ${pair}. Live mode uses PubMed via SynThera tools.`,
+    };
+  }
+  if (q.includes("why not")) {
+    return {
+      toolsUsed: ["why_not"],
+      content: `[Demo] Why-not: alias → filter → graph membership → GNN score → beam comparison for ${prediction.cell_line}.`,
+    };
+  }
+  return {
+    toolsUsed: ["predict_pair"],
+    content: `[Demo] Assistant for ${pair} @ ${prediction.cell_line}. Ask about mechanism, literature, or why-not.`,
+  };
+}
+
+function seedMessages(prediction: PredictionResult): Message[] {
+  return [
+    {
+      id: "init-1",
+      role: "assistant",
+      content: `Research assistant for ${prediction.drug_a_name} × ${prediction.drug_b_name} (${prediction.cell_line}). Ask anything grounded in SynThera tools.`,
+      timestamp: now(),
+    },
+    {
+      id: "demo-user-1",
+      role: "user",
+      content: "What is the biological mechanism of this pair?",
+      timestamp: now(),
+    },
+    {
+      id: "demo-assistant-1",
+      role: "assistant",
+      content: buildDummyReply("biological mechanism", prediction).content,
+      toolsUsed: ["predict_pair"],
+      timestamp: now(),
+    },
+  ];
+}
+
+export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
+  prediction,
+  isOpen,
+  onOpenChange,
+  width,
+  onWidthChange,
+}) => {
+  const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'init-1',
-      role: 'assistant',
-      content:
-        `Hello! I am your grounded research assistant for ${prediction.drug_a_name} + ${prediction.drug_b_name} in ${prediction.cell_line}. ` +
-        `I only state facts that come directly from SynThera's tools (predict_pair, search_combinations, why_not, get_literature). ` +
-        `Ask me about this pair's mechanism, supporting literature, or why another drug was excluded.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    },
+  const [messages, setMessages] = useState<Message[]>(() =>
+    seedMessages(prediction),
+  );
+  const [showGreeting, setShowGreeting] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+  const greetingShownFor = useRef<string>("");
+
+  const predictionKey = `${prediction.drug_a}|${prediction.drug_b}|${prediction.cell_line}`;
+
+  // Fresh Analysis visit / new pair → offer greeting once (not again after close)
+  useEffect(() => {
+    setMessages(seedMessages(prediction));
+    setErrorMessage(null);
+    if (greetingShownFor.current !== predictionKey) {
+      greetingShownFor.current = predictionKey;
+      setShowGreeting(true);
+    }
+  }, [
+    prediction.drug_a,
+    prediction.drug_b,
+    prediction.cell_line,
+    predictionKey,
   ]);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  // Auto-dismiss greeting after ~3.5s
+  useEffect(() => {
+    if (!showGreeting || isOpen) return;
+    const t = window.setTimeout(() => setShowGreeting(false), 3500);
+    return () => window.clearTimeout(t);
+  }, [showGreeting, isOpen, predictionKey]);
 
   useEffect(() => {
     if (isOpen) {
-      scrollToBottom();
+      setShowGreeting(false);
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, isOpen]);
+  }, [messages, isOpen, isLoading]);
+
+  const onResizeMove = useCallback(
+    (e: MouseEvent) => {
+      if (!dragging.current) return;
+      const next = window.innerWidth - e.clientX;
+      onWidthChange(Math.min(MAX_W, Math.max(MIN_W, next)));
+    },
+    [onWidthChange],
+  );
+
+  const onResizeUp = useCallback(() => {
+    dragging.current = false;
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("mousemove", onResizeMove);
+    window.addEventListener("mouseup", onResizeUp);
+    return () => {
+      window.removeEventListener("mousemove", onResizeMove);
+      window.removeEventListener("mouseup", onResizeUp);
+    };
+  }, [onResizeMove, onResizeUp]);
 
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputMessage).trim();
     if (!text || isLoading) return;
 
-    const userMsg: Message = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
-    setInputMessage('');
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: text,
+        timestamp: now(),
+      },
+    ]);
+    setInputMessage("");
     setIsLoading(true);
     setErrorMessage(null);
 
-    // Build conversation history for API
     const history = messages
-      .filter((m) => m.id !== 'init-1')
-      .map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
+      .filter((m) => !m.id.startsWith("init") && !m.id.startsWith("demo"))
+      .map((m) => ({ role: m.role, content: m.content }));
 
     try {
       const response = await sendAnalysisChatMessage({
@@ -89,27 +196,27 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({ prediction
           cell_line: prediction.cell_line,
         },
       });
-
-      const assistantMsg: Message = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: response.response,
-        toolsUsed: response.tools_used,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
-    } catch (err: any) {
-      console.error('Chat error:', err);
-      const detail = err?.message || 'Failed to communicate with research assistant';
-      setErrorMessage(detail);
       setMessages((prev) => [
         ...prev,
         {
-          id: `err-${Date.now()}`,
-          role: 'assistant',
-          content: `Error: ${detail}. If OPENROUTER_API_KEY is not configured, please set it in your .env configuration.`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: response.response,
+          toolsUsed: response.tools_used,
+          timestamp: now(),
+        },
+      ]);
+    } catch {
+      const dummy = buildDummyReply(text, prediction);
+      await new Promise((r) => setTimeout(r, 500));
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: dummy.content,
+          toolsUsed: dummy.toolsUsed,
+          timestamp: now(),
         },
       ]);
     } finally {
@@ -118,178 +225,200 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({ prediction
   };
 
   const sampleQuestions = [
-    `What is the biological mechanism of this pair?`,
-    `Are there PubMed papers supporting this?`,
-    `Why not Temozolomide?`,
+    "What is the biological mechanism of this pair?",
+    "Are there PubMed papers supporting this?",
+    "Why not Temozolomide?",
   ];
 
+  if (!isOpen) {
+    return (
+      <div className="fixed bottom-5 right-5 z-[60] flex flex-col items-end gap-3 pointer-events-none">
+        {showGreeting && (
+          <button
+            type="button"
+            onClick={() => {
+              setShowGreeting(false);
+              onOpenChange(true);
+            }}
+            className="pointer-events-auto max-w-[240px] text-left px-4 py-3 rounded-2xl rounded-br-md bg-[#FFFEFB] border border-[#E5E2DC] shadow-[0_8px_28px_rgba(28,36,33,0.10)] text-sm text-[#1C2421] cursor-pointer hover:border-[#2F6B5E]/50 transition-all animate-fade-in"
+          >
+            <span className="font-semibold text-[#2F6B5E] block text-xs mb-0.5">
+              Research Assistant
+            </span>
+            Hi! How can I help you?
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            setShowGreeting(false);
+            onOpenChange(true);
+          }}
+          className="pointer-events-auto w-14 h-14 rounded-full bg-[#2F6B5E] hover:bg-[#25564B] text-[#FFFEFB] shadow-[0_8px_24px_rgba(47,107,94,0.28)] flex items-center justify-center cursor-pointer transition-transform hover:scale-105"
+          title="Open research assistant"
+          aria-label="Open research assistant"
+        >
+          <MessageSquare className="w-5 h-5" />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl shadow-xs overflow-hidden transition-all duration-300">
-      {/* Collapsible Header */}
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-5 py-4 flex items-center justify-between bg-gradient-to-r from-[#F8FAFC] to-[#F1F5F9] hover:from-[#F1F5F9] hover:to-[#E2E8F0] transition-colors cursor-pointer text-left"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#0D9488]/10 text-[#0D9488] flex items-center justify-center font-bold">
-            <MessageSquare className="w-4 h-4" />
+    <aside
+      className="shrink-0 flex flex-col border-l border-[#E5E2DC] bg-[#FFFEFB] sticky top-0 relative"
+      style={{
+        width,
+        minHeight: "calc(100vh - 9rem)",
+        maxHeight: "calc(100vh - 5.5rem)",
+      }}
+      aria-label="Research assistant panel"
+    >
+      {/* Resize handle */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        title="Drag to resize"
+        onMouseDown={() => {
+          dragging.current = true;
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+        }}
+        className="absolute left-0 top-0 bottom-0 w-1.5 -ml-0.5 cursor-col-resize z-10 hover:bg-[#2F6B5E]/40 active:bg-[#2F6B5E]/60"
+      />
+
+      {/* Header */}
+      <div className="shrink-0 h-12 px-3 border-b border-[#E5E2DC] flex items-center justify-between gap-2 bg-[#F3F1EC]">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-7 h-7 rounded-md bg-[#2F6B5E] text-[#FFFEFB] flex items-center justify-center shrink-0">
+            <MessageSquare className="w-3.5 h-3.5" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-semibold text-[#0F172A]">
-                SynThera Research Assistant
-              </h4>
-              <span className="px-2 py-0.5 text-[10px] font-mono font-medium rounded-full bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">
-                Grounded Tool Calling
-              </span>
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-[#1C2421] truncate">
+              Research Assistant
             </div>
-            <p className="text-xs text-[#64748B] mt-0.5">
-              Active Context: <span className="font-medium text-[#334155]">{prediction.drug_a_name} + {prediction.drug_b_name}</span> &bull; <span className="font-mono text-[#64748B]">{prediction.cell_line}</span>
-            </p>
+            <div className="text-[10px] font-mono text-[#6B746F] truncate">
+              {prediction.drug_a_name} × {prediction.drug_b_name}
+            </div>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => onOpenChange(false)}
+          className="p-1.5 rounded-md text-[#6B746F] hover:bg-[#E5E2DC] hover:text-[#1C2421] cursor-pointer"
+          title="Close panel"
+          aria-label="Close research assistant"
+        >
+          <PanelRightClose className="w-4 h-4" />
+        </button>
+      </div>
 
-        <div className="flex items-center gap-2 text-xs font-semibold text-[#475569]">
-          <span>{isOpen ? 'Collapse Chat' : 'Open Grounded Chat'}</span>
-          {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-        </div>
-      </button>
-
-      {/* Expanded Panel */}
-      {isOpen && (
-        <div className="border-t border-[#E2E8F0] flex flex-col bg-[#F8FAFC]">
-          {/* Messages Container */}
-          <div className="p-4 sm:p-5 max-h-[460px] overflow-y-auto space-y-4">
-            {messages.map((msg) => (
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-[#F6F4EF] min-h-0">
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+          >
+            {msg.role === "assistant" && (
+              <div className="w-6 h-6 rounded-full bg-[#2F6B5E] text-[#FFFEFB] flex items-center justify-center shrink-0 mt-0.5">
+                <Bot className="w-3.5 h-3.5" />
+              </div>
+            )}
+            <div className="max-w-[88%] space-y-1">
               <div
-                key={msg.id}
-                className={`flex gap-3 ${
-                  msg.role === 'user' ? 'justify-end' : 'justify-start'
+                className={`rounded-xl px-3 py-2 text-xs leading-normal ${
+                  msg.role === "user"
+                    ? "bg-[#2F6B5E] text-[#FFFEFB] rounded-br-sm"
+                    : "bg-[#FFFEFB] text-[#1C2421] border border-[#E5E2DC] rounded-bl-sm"
                 }`}
               >
-                {msg.role === 'assistant' && (
-                  <div className="w-7 h-7 rounded-full bg-[#0D9488] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
-                    <Bot className="w-4 h-4" />
-                  </div>
-                )}
-
-                <div className={`max-w-[85%] space-y-1.5 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div
-                    className={`rounded-xl px-4 py-3 text-xs leading-relaxed ${
-                      msg.role === 'user'
-                        ? 'bg-[#0D9488] text-white shadow-xs rounded-tr-none'
-                        : 'bg-white text-[#1E293B] border border-[#E2E8F0] shadow-xs rounded-tl-none'
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                  </div>
-
-                  {/* Grounded Tool Usage Tag */}
-                  {msg.role === 'assistant' && msg.toolsUsed && msg.toolsUsed.length > 0 && (
-                    <div className="flex items-center gap-1.5 px-1 text-[11px] font-mono text-[#64748B]">
-                      <Wrench className="w-3 h-3 text-[#0D9488]" />
-                      <span>used:</span>
-                      <div className="flex flex-wrap gap-1">
-                        {msg.toolsUsed.map((tool) => (
-                          <span
-                            key={tool}
-                            className="px-1.5 py-0.2 bg-[#F1F5F9] border border-[#CBD5E1] rounded text-[#334155] font-semibold"
-                          >
-                            {tool}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <span className="block text-[10px] text-[#94A3B8] px-1">
-                    {msg.timestamp}
-                  </span>
-                </div>
-
-                {msg.role === 'user' && (
-                  <div className="w-7 h-7 rounded-full bg-[#334155] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
-                    <User className="w-4 h-4" />
-                  </div>
-                )}
+                <p className="whitespace-pre-wrap">{msg.content}</p>
               </div>
-            ))}
-
-            {isLoading && (
-              <div className="flex gap-3 justify-start items-center text-xs text-[#64748B]">
-                <div className="w-7 h-7 rounded-full bg-[#0D9488]/20 text-[#0D9488] flex items-center justify-center shrink-0">
-                  <Loader2 className="w-4 h-4 animate-spin" />
+              {msg.toolsUsed && msg.toolsUsed.length > 0 && (
+                <div className="flex items-center gap-1 px-1 text-[10px] font-mono text-[#6B746F]">
+                  <Wrench className="w-3 h-3 text-[#2F6B5E]" />
+                  {msg.toolsUsed.join(", ")}
                 </div>
-                <div className="bg-white border border-[#E2E8F0] rounded-xl px-4 py-2.5 shadow-xs flex items-center gap-2">
-                  <span className="inline-block w-2 h-2 rounded-full bg-[#0D9488] animate-pulse" />
-                  <span>Evaluating tools & compiling grounded response...</span>
-                </div>
+              )}
+            </div>
+            {msg.role === "user" && (
+              <div className="w-6 h-6 rounded-full bg-[#3D4742] text-[#FFFEFB] flex items-center justify-center shrink-0 mt-0.5">
+                <User className="w-3.5 h-3.5" />
               </div>
             )}
-
-            <div ref={messagesEndRef} />
           </div>
-
-          {/* Quick Suggestion Chips */}
-          <div className="px-4 py-2 bg-[#F1F5F9] border-t border-[#E2E8F0] flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-semibold text-[#64748B] flex items-center gap-1">
-              <HelpCircle className="w-3 h-3" /> Prompts:
-            </span>
-            {sampleQuestions.map((q) => (
-              <button
-                key={q}
-                type="button"
-                disabled={isLoading}
-                onClick={() => handleSendMessage(q)}
-                className="text-[11px] bg-white border border-[#CBD5E1] hover:border-[#0D9488] hover:text-[#0D9488] text-[#334155] px-2.5 py-1 rounded-full transition-colors cursor-pointer disabled:opacity-50"
-              >
-                {q}
-              </button>
-            ))}
+        ))}
+        {isLoading && (
+          <div className="flex items-center gap-2 text-xs text-[#6B746F]">
+            <Loader2 className="w-4 h-4 animate-spin text-[#2F6B5E]" />
+            Thinking…
           </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
 
-          {/* Input Box */}
-          <div className="p-3 sm:p-4 bg-white border-t border-[#E2E8F0] space-y-2">
-            {errorMessage && (
-              <div className="flex items-center gap-2 p-2 bg-[#FEF2F2] border border-[#FECACA] rounded-lg text-xs text-[#991B1B]">
-                <AlertCircle className="w-4 h-4 shrink-0 text-[#EF4444]" />
-                <span className="truncate">{errorMessage}</span>
-              </div>
-            )}
-            <form
-              onSubmit={(e) => {
+      {/* Prompts */}
+      <div className="shrink-0 px-3 py-2 border-t border-[#E5E2DC] bg-[#FFFEFB] flex flex-wrap gap-1.5">
+        <span className="text-[10px] text-[#8A918C] flex items-center gap-1 w-full">
+          <HelpCircle className="w-3 h-3" /> Try
+        </span>
+        {sampleQuestions.map((q) => (
+          <button
+            key={q}
+            type="button"
+            disabled={isLoading}
+            onClick={() => handleSendMessage(q)}
+            className="text-[10px] bg-[#E8F0ED] border border-[#B5CFC6] text-[#25564B] px-2 py-0.5 rounded-full cursor-pointer disabled:opacity-50 hover:bg-[#D4E5DF]"
+          >
+            {q.length > 28 ? `${q.slice(0, 26)}…` : q}
+          </button>
+        ))}
+      </div>
+
+      {/* Input */}
+      <div className="shrink-0 p-2.5 border-t border-[#E5E2DC] bg-[#FFFEFB]">
+        {errorMessage && (
+          <div className="flex items-center gap-1.5 mb-2 text-[10px] text-[#8B4040]">
+            <AlertCircle className="w-3 h-3" />
+            <span className="truncate">{errorMessage}</span>
+          </div>
+        )}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSendMessage();
+          }}
+          className="flex items-end gap-1.5"
+        >
+          <textarea
+            value={inputMessage}
+            disabled={isLoading}
+            rows={2}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSendMessage();
-              }}
-              className="flex items-center gap-2"
-            >
-              <input
-                type="text"
-                value={inputMessage}
-                disabled={isLoading}
-                onChange={(e) => setInputMessage(e.target.value)}
-                placeholder="Ask about this pair's mechanism, literature evidence, or why a drug was excluded..."
-                className="flex-1 px-3.5 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#0D9488] focus:border-[#0D9488] transition-all"
-              />
-              <button
-                type="submit"
-                disabled={!inputMessage.trim() || isLoading}
-                className="px-4 py-2.5 bg-[#0D9488] hover:bg-[#0F766E] disabled:bg-[#CBD5E1] text-white rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:cursor-not-allowed shadow-xs"
-              >
-                {isLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Send</span>
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+              }
+            }}
+            placeholder="Ask about this pair… (Enter to send)"
+            className="flex-1 px-3 py-2 bg-[#F3F1EC] border border-[#E5E2DC] rounded-lg text-xs resize-none focus:outline-none focus:ring-1 focus:ring-[#2F6B5E] focus:border-[#2F6B5E]"
+          />
+          <button
+            type="submit"
+            disabled={!inputMessage.trim() || isLoading}
+            className="p-2.5 bg-[#2F6B5E] hover:bg-[#25564B] disabled:bg-[#D8D5CE] text-[#FFFEFB] rounded-lg cursor-pointer disabled:cursor-not-allowed"
+            aria-label="Send"
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+          </button>
+        </form>
+      </div>
+    </aside>
   );
 };

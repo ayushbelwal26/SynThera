@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from "react";
 import {
   ReactFlow,
   Controls,
@@ -6,51 +6,45 @@ import {
   MarkerType,
   Handle,
   Position,
-} from '@xyflow/react';
-import type { Node, Edge } from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import {
-  Network,
-  Search,
-  Filter,
-  X,
-  Dna,
-} from 'lucide-react';
-import { PRIME_KG_SUBGRAPH } from '../services/kgData';
-import type { KGNode, EntityType } from '../types/api';
+} from "@xyflow/react";
+import type { Node, Edge } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { Network, Search, Filter, X, Dna } from "lucide-react";
+import { PRIME_KG_SUBGRAPH } from "../services/kgData";
+import type { KGNode, EntityType } from "../types/api";
 
 // Custom Biological Node for KG Explorer (matches PathwayGraph design language)
 const KGExplorerNode = ({ data }: { data: any }) => {
   const typeStyles = {
     drug: {
-      bg: 'bg-[#F0FDFA]',
-      border: 'border-[#0D9488]',
-      badge: 'bg-[#CCFBF1] text-[#0F766E]',
+      bg: "bg-[#E8F0ED]",
+      border: "border-[#2F6B5E]",
+      badge: "bg-[#D4E5DF] text-[#25564B]",
     },
     protein: {
-      bg: 'bg-[#FFFBEB]',
-      border: 'border-[#D97706]',
-      badge: 'bg-[#FEF3C7] text-[#92400E]',
+      bg: "bg-[#F7F0E4]",
+      border: "border-[#B8893D]",
+      badge: "bg-[#F5EFE4] text-[#7A5A28]",
     },
     gene: {
-      bg: 'bg-[#FFFBEB]',
-      border: 'border-[#D97706]',
-      badge: 'bg-[#FEF3C7] text-[#92400E]',
+      bg: "bg-[#F7F0E4]",
+      border: "border-[#B8893D]",
+      badge: "bg-[#F5EFE4] text-[#7A5A28]",
     },
     pathway: {
-      bg: 'bg-[#F5F3FF]',
-      border: 'border-[#7C3AED]',
-      badge: 'bg-[#EDE9FE] text-[#5B21B6]',
+      bg: "bg-[#F3F0F7]",
+      border: "border-[#8B7BA8]",
+      badge: "bg-[#EDE8F3] text-[#6B5B8A]",
     },
     disease: {
-      bg: 'bg-[#ECFDF5]',
-      border: 'border-[#059669]',
-      badge: 'bg-[#D1FAE5] text-[#065F46]',
+      bg: "bg-[#E6F2F2]",
+      border: "border-[#4A8B8A]",
+      badge: "bg-[#D4E8E8] text-[#2F5E5D]",
     },
   }[data.type as EntityType] || {
-    bg: 'bg-[#FFFFFF]',
-    border: 'border-[#CBD5E1]',
-    badge: 'bg-[#F1F5F9] text-[#475569]',
+    bg: "bg-[#FFFEFB]",
+    border: "border-[#D8D5CE]",
+    badge: "bg-[#EEEBE5] text-[#5A635E]",
   };
 
   const isHighlighted = data.isHighlighted;
@@ -59,25 +53,34 @@ const KGExplorerNode = ({ data }: { data: any }) => {
     <div
       className={`px-3 py-2 rounded-md border shadow-xs min-w-[130px] max-w-[190px] cursor-pointer transition-all ${
         isHighlighted
-          ? 'ring-2 ring-[#0D9488] scale-105 shadow-md ' + typeStyles.bg
-          : 'hover:ring-1 hover:ring-[#0D9488]/40 ' + typeStyles.bg
+          ? "ring-2 ring-[#2F6B5E] scale-105 shadow-md " + typeStyles.bg
+          : "hover:ring-1 hover:ring-[#2F6B5E]/40 " + typeStyles.bg
       } ${typeStyles.border}`}
     >
-      <Handle type="target" position={Position.Top} className="!bg-[#64748B]" />
+      <Handle type="target" position={Position.Top} className="!bg-[#6B746F]" />
       <div className="flex items-center justify-between mb-1">
-        <span className={`text-[9px] font-mono font-semibold uppercase px-1.5 py-0.5 rounded ${typeStyles.badge}`}>
+        <span
+          className={`text-[9px] font-mono font-semibold uppercase px-1.5 py-0.5 rounded ${typeStyles.badge}`}
+        >
           {data.type}
         </span>
         {data.degree && (
-          <span className="text-[9px] font-mono text-[#64748B]">
+          <span className="text-[9px] font-mono text-[#6B746F]">
             deg: {data.degree}
           </span>
         )}
       </div>
-      <div className="text-xs font-semibold text-[#0F172A] truncate" title={data.name}>
+      <div
+        className="text-xs font-semibold text-[#1C2421] truncate"
+        title={data.name}
+      >
         {data.name}
       </div>
-      <Handle type="source" position={Position.Bottom} className="!bg-[#64748B]" />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="!bg-[#6B746F]"
+      />
     </div>
   );
 };
@@ -89,9 +92,9 @@ const nodeTypes = {
 export const KnowledgeGraphPage: React.FC = () => {
   // Pre-populate with Cyclophosphamide so the page opens on the demo anchor drug's
   // 1-hop neighborhood rather than an arbitrary full-graph slice.
-  const [searchQuery, setSearchQuery] = useState('Cyclophosphamide');
+  const [searchQuery, setSearchQuery] = useState("Cyclophosphamide");
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(
-    new Set(['drug', 'protein', 'pathway', 'disease'])
+    new Set(["drug", "protein", "pathway", "disease"]),
   );
   const [selectedEntity, setSelectedEntity] = useState<KGNode | null>(null);
 
@@ -103,7 +106,7 @@ export const KnowledgeGraphPage: React.FC = () => {
   }, []);
 
   const [selectedRelations, setSelectedRelations] = useState<Set<string>>(
-    new Set(allRelations)
+    new Set(allRelations),
   );
 
   const toggleType = (t: string) => {
@@ -146,7 +149,7 @@ export const KnowledgeGraphPage: React.FC = () => {
     const anchorIds = new Set<string>(
       PRIME_KG_SUBGRAPH.nodes
         .filter((n) => n.name.toLowerCase().includes(q))
-        .map((n) => n.id)
+        .map((n) => n.id),
     );
     if (anchorIds.size === 0) return new Set(); // no match → empty graph
 
@@ -173,7 +176,7 @@ export const KnowledgeGraphPage: React.FC = () => {
   const { flowNodes, flowEdges } = useMemo(() => {
     // 1. Filter edges by selected relation
     const validEdges = PRIME_KG_SUBGRAPH.edges.filter((e) =>
-      selectedRelations.has(e.relation)
+      selectedRelations.has(e.relation),
     );
 
     // 2. Identify nodes incident to valid edges and matching type
@@ -184,7 +187,7 @@ export const KnowledgeGraphPage: React.FC = () => {
     });
 
     let validNodes = PRIME_KG_SUBGRAPH.nodes.filter(
-      (n) => incidentNodeIds.has(n.id) && selectedTypes.has(n.type)
+      (n) => incidentNodeIds.has(n.id) && selectedTypes.has(n.type),
     );
 
     // 3. When a search is active, restrict to 1-hop neighbourhood
@@ -196,13 +199,17 @@ export const KnowledgeGraphPage: React.FC = () => {
 
     // Refine edges so both endpoints are in the visible node set
     const finalEdges = validEdges.filter(
-      (e) => validNodeIdSet.has(e.source) && validNodeIdSet.has(e.target)
+      (e) => validNodeIdSet.has(e.source) && validNodeIdSet.has(e.target),
     );
 
     // Circular / layered layout — anchor drug placed at center
     const q = searchQuery.trim().toLowerCase();
-    const anchorNodes = validNodes.filter((n) => q && n.name.toLowerCase().includes(q));
-    const peripheryNodes = validNodes.filter((n) => !anchorNodes.find((a) => a.id === n.id));
+    const anchorNodes = validNodes.filter(
+      (n) => q && n.name.toLowerCase().includes(q),
+    );
+    const peripheryNodes = validNodes.filter(
+      (n) => !anchorNodes.find((a) => a.id === n.id),
+    );
 
     // Place anchor(s) at center, periphery in orbit
     const total = peripheryNodes.length;
@@ -213,9 +220,13 @@ export const KnowledgeGraphPage: React.FC = () => {
 
     const anchorFlow: Node[] = anchorNodes.map((n, i) => ({
       id: n.id,
-      type: 'kgNode',
+      type: "kgNode",
       position: {
-        x: centerX + (anchorNodes.length > 1 ? (i - (anchorNodes.length - 1) / 2) * 220 : 0),
+        x:
+          centerX +
+          (anchorNodes.length > 1
+            ? (i - (anchorNodes.length - 1) / 2) * 220
+            : 0),
         y: centerY,
       },
       data: { ...n, isHighlighted: true, isAnchor: true },
@@ -227,7 +238,7 @@ export const KnowledgeGraphPage: React.FC = () => {
       const y = centerY + radiusY * Math.sin(angle);
       return {
         id: n.id,
-        type: 'kgNode',
+        type: "kgNode",
         position: { x, y },
         data: {
           ...n,
@@ -239,15 +250,16 @@ export const KnowledgeGraphPage: React.FC = () => {
     const nodesList: Node[] = [...anchorFlow, ...peripheryFlow];
 
     const edgesList: Edge[] = finalEdges.map((e, idx) => {
-      const isAnchorEdge =
-        anchorNodes.some((a) => a.id === e.source || a.id === e.target);
+      const isAnchorEdge = anchorNodes.some(
+        (a) => a.id === e.source || a.id === e.target,
+      );
       return {
         id: `kg-edge-${idx}`,
         source: e.source,
         target: e.target,
-        type: 'default',
+        type: "default",
         style: {
-          stroke: isAnchorEdge ? '#0D9488' : '#94A3B8',
+          stroke: isAnchorEdge ? "#2F6B5E" : "#8A918C",
           strokeWidth: isAnchorEdge ? 2 : 1.2,
           opacity: isAnchorEdge ? 1 : 0.6,
         },
@@ -255,17 +267,23 @@ export const KnowledgeGraphPage: React.FC = () => {
           type: MarkerType.ArrowClosed,
           width: 10,
           height: 10,
-          color: isAnchorEdge ? '#0D9488' : '#94A3B8',
+          color: isAnchorEdge ? "#2F6B5E" : "#8A918C",
         },
         data: e,
-        label: e.relation.replace(/_/g, ' '),
-        labelStyle: { fontSize: 9, fill: '#64748B', fontFamily: 'monospace' },
-        labelBgStyle: { fill: '#F8FAFC', fillOpacity: 0.85 },
+        label: e.relation.replace(/_/g, " "),
+        labelStyle: { fontSize: 9, fill: "#6B746F", fontFamily: "Inter, system-ui, sans-serif" },
+        labelBgStyle: { fill: "#F3F1EC", fillOpacity: 0.85 },
       };
     });
 
     return { flowNodes: nodesList, flowEdges: edgesList };
-  }, [selectedTypes, selectedRelations, searchQuery, selectedEntity, neighbourhoodNodeIds]);
+  }, [
+    selectedTypes,
+    selectedRelations,
+    searchQuery,
+    selectedEntity,
+    neighbourhoodNodeIds,
+  ]);
 
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     const rawNode = PRIME_KG_SUBGRAPH.nodes.find((n) => n.id === node.id);
@@ -276,49 +294,50 @@ export const KnowledgeGraphPage: React.FC = () => {
   const connectedEdges = useMemo(() => {
     if (!selectedEntity) return [];
     return PRIME_KG_SUBGRAPH.edges.filter(
-      (e) => e.source === selectedEntity.id || e.target === selectedEntity.id
+      (e) => e.source === selectedEntity.id || e.target === selectedEntity.id,
     );
   }, [selectedEntity]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="border-b border-[#E5E5E0] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="border-b border-[#E5E2DC] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <Network className="w-5 h-5 text-[#0D9488]" />
-            <h2 className="font-serif text-2xl font-bold text-[#0F172A]">
+            <Network className="w-5 h-5 text-[#2F6B5E]" />
+            <h2 className="text-2xl font-semibold text-[#1C2421]">
               PrimeKG Knowledge Graph Explorer
             </h2>
           </div>
-          <p className="text-xs text-[#717784] mt-0.5">
-            Exploratory topology of verified precision oncology relationships across Drugs, Targets, Pathways, and Indications
+          <p className="text-xs text-[#7A827C] mt-0.5">
+            Exploratory topology of verified precision oncology relationships
+            across Drugs, Targets, Pathways, and Indications
           </p>
         </div>
 
         {/* Search Bar */}
         <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-[#94A3B8] absolute inset-y-0 left-3 my-auto pointer-events-none" />
+          <Search className="w-4 h-4 text-[#8A918C] absolute inset-y-0 left-3 my-auto pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search entity (e.g. Cyclophosphamide, MGMT)..."
-            className="w-full pl-9 pr-8 py-2 bg-[#FFFFFF] border border-[#CBD5E1] focus:border-[#0D9488] rounded-md text-xs text-[#0F172A] outline-none"
+            className="w-full pl-9 pr-8 py-2 bg-[#FFFEFB] border border-[#D8D5CE] focus:border-[#2F6B5E] rounded-md text-xs text-[#1C2421] outline-none"
           />
           {searchQuery && (
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
+              onClick={() => setSearchQuery("")}
               title="Clear search — shows full subgraph"
-              className="absolute inset-y-0 right-2 my-auto text-[#94A3B8] hover:text-[#0F172A]"
+              className="absolute inset-y-0 right-2 my-auto text-[#8A918C] hover:text-[#1C2421]"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
           {/* Neighbourhood mode badge */}
           {searchQuery.trim() && (
-            <span className="absolute -bottom-5 left-0 text-[10px] font-mono text-[#0D9488]">
+            <span className="absolute -bottom-5 left-0 text-[10px] font-mono text-[#2F6B5E]">
               Showing 1-hop neighbourhood · clear to see full slice
             </span>
           )}
@@ -326,63 +345,67 @@ export const KnowledgeGraphPage: React.FC = () => {
       </div>
 
       {/* Prominent Scientific Scope Banner */}
-      <div className="bg-[#F8FAFC] border border-[#CBD5E1] rounded-md px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[#334155]">
+      <div className="bg-[#F3F1EC] border border-[#D8D5CE] rounded-md px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[#3D4742]">
         <div className="flex items-center gap-2">
-          <Dna className="w-4 h-4 text-[#0D9488] shrink-0" />
+          <Dna className="w-4 h-4 text-[#2F6B5E] shrink-0" />
           <span>
             <strong>Curated Subgraph Scope: </strong>
-            Showing a curated oncology subgraph (8 reference compounds, 76 biological entities, 120 verified edges) extracted from PrimeKG — not the full PrimeKG index.
+            Showing a curated oncology subgraph (8 reference compounds, 76
+            biological entities, 120 verified edges) extracted from PrimeKG —
+            not the full PrimeKG index.
           </span>
         </div>
-        <span className="text-[11px] font-mono text-[#64748B] shrink-0 bg-[#F1F5F9] px-2 py-0.5 rounded border border-[#E2E8F0]">
+        <span className="text-[11px] font-mono text-[#6B746F] shrink-0 bg-[#EEEBE5] px-2 py-0.5 rounded border border-[#E5E2DC]">
           Static Slice &bull; Live Graph API planned
         </span>
       </div>
 
       {/* Filter Bar: Node Types & Relation Types */}
-      <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-4 shadow-xs space-y-3 text-xs">
+      <div className="syn-card rounded-lg p-4 space-y-3 text-xs">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="font-semibold text-[#475569] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-              <Filter className="w-3.5 h-3.5 text-[#0D9488]" />
+            <span className="font-semibold text-[#5A635E] uppercase tracking-wide text-[11px] flex items-center gap-1.5">
+              <Filter className="w-3.5 h-3.5 text-[#2F6B5E]" />
               Entity Types:
             </span>
-            {(['drug', 'protein', 'pathway', 'disease'] as EntityType[]).map((t) => {
-              const isChecked = selectedTypes.has(t);
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => toggleType(t)}
-                  className={`px-2.5 py-1 rounded font-mono uppercase tracking-wide border transition-all cursor-pointer ${
-                    isChecked
-                      ? t === 'drug'
-                        ? 'bg-[#CCFBF1] text-[#0F766E] border-[#0D9488]'
-                        : t === 'protein'
-                        ? 'bg-[#FEF3C7] text-[#92400E] border-[#D97706]'
-                        : t === 'pathway'
-                        ? 'bg-[#EDE9FE] text-[#5B21B6] border-[#7C3AED]'
-                        : 'bg-[#D1FAE5] text-[#065F46] border-[#059669]'
-                      : 'bg-[#F8FAFC] text-[#94A3B8] border-[#E2E8F0]'
-                  }`}
-                >
-                  {t}
-                </button>
-              );
-            })}
+            {(["drug", "protein", "pathway", "disease"] as EntityType[]).map(
+              (t) => {
+                const isChecked = selectedTypes.has(t);
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => toggleType(t)}
+                    className={`px-2.5 py-1 rounded font-mono uppercase tracking-wide border transition-all cursor-pointer ${
+                      isChecked
+                        ? t === "drug"
+                          ? "bg-[#D4E5DF] text-[#25564B] border-[#2F6B5E]"
+                          : t === "protein"
+                            ? "bg-[#F5EFE4] text-[#7A5A28] border-[#B8893D]"
+                            : t === "pathway"
+                              ? "bg-[#EDE8F3] text-[#6B5B8A] border-[#8B7BA8]"
+                              : "bg-[#D4E8E8] text-[#2F5E5D] border-[#4A8B8A]"
+                        : "bg-[#F3F1EC] text-[#8A918C] border-[#E5E2DC]"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                );
+              },
+            )}
           </div>
 
-          <div className="flex items-center gap-2 text-[11px] font-mono text-[#64748B]">
+          <div className="flex items-center gap-2 text-[11px] font-mono text-[#6B746F]">
             <span>Displaying:</span>
-            <strong className="text-[#0F172A]">{flowNodes.length} nodes</strong>
+            <strong className="text-[#1C2421]">{flowNodes.length} nodes</strong>
             <span>&bull;</span>
-            <strong className="text-[#0F172A]">{flowEdges.length} edges</strong>
+            <strong className="text-[#1C2421]">{flowEdges.length} edges</strong>
           </div>
         </div>
 
         {/* Relation Filter Tags */}
-        <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-[#F1F5F9]">
-          <span className="font-semibold text-[#475569] text-[11px] uppercase tracking-wider">
+        <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-[#EEEBE5]">
+          <span className="font-semibold text-[#5A635E] text-[11px] uppercase tracking-wide">
             Relations:
           </span>
           {allRelations.map((rel) => {
@@ -394,11 +417,11 @@ export const KnowledgeGraphPage: React.FC = () => {
                 onClick={() => toggleRelation(rel)}
                 className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors cursor-pointer ${
                   isChecked
-                    ? 'bg-[#F0FDFA] text-[#0F766E] border-[#99F6E4]'
-                    : 'bg-[#F8FAFC] text-[#94A3B8] border-[#E2E8F0]'
+                    ? "bg-[#E8F0ED] text-[#25564B] border-[#B5CFC6]"
+                    : "bg-[#F3F1EC] text-[#8A918C] border-[#E5E2DC]"
                 }`}
               >
-                {rel.replace(/_/g, ' ')}
+                {rel.replace(/_/g, " ")}
               </button>
             );
           })}
@@ -406,8 +429,8 @@ export const KnowledgeGraphPage: React.FC = () => {
       </div>
 
       {/* Main Canvas & Inspector Split */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-3 h-[580px] border border-[#E5E5E0] rounded-lg overflow-hidden relative bg-[#F8F9FA] shadow-xs">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <div className="lg:col-span-3 h-[580px] border border-[#D0CDC5] rounded-lg overflow-hidden relative bg-[#F3F1EC] shadow-[0_1px_2px_rgba(28,36,33,0.04),0_4px_14px_rgba(28,36,33,0.07)]">
           <ReactFlow
             nodes={flowNodes}
             edges={flowEdges}
@@ -417,48 +440,54 @@ export const KnowledgeGraphPage: React.FC = () => {
             minZoom={0.2}
             maxZoom={2.5}
           >
-            <Background color="#CBD5E1" gap={16} size={1} />
+            <Background color="#D8D5CE" gap={16} size={1} />
             <Controls showInteractive={false} />
           </ReactFlow>
 
           {flowNodes.length === 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-[#FFFFFF]/95 z-10">
-              <p className="font-serif text-sm font-bold text-[#0F172A] mb-1">
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-[#FFFEFB]/95 z-10">
+              <p className="text-sm font-semibold text-[#1C2421] mb-1">
                 No matching entities in the curated oncology slice
               </p>
-              <p className="text-xs text-[#64748B] max-w-md leading-relaxed mb-4">
-                The explorer currently bundles a curated reference slice (8 compounds, 76 entities, 120 verified edges) extracted from PrimeKG. The full PrimeKG index contains 7,946 drugs and 19,585 proteins; a live backend subgraph streaming endpoint would be required to query the complete 4.3M-edge graph.
+              <p className="text-xs text-[#6B746F] max-w-md leading-normal mb-4">
+                The explorer currently bundles a curated reference slice (8
+                compounds, 76 entities, 120 verified edges) extracted from
+                PrimeKG. The full PrimeKG index contains 7,946 drugs and 19,585
+                proteins; a live backend subgraph streaming endpoint would be
+                required to query the complete 4.3M-edge graph.
               </p>
               <button
                 type="button"
                 onClick={() => {
-                  setSearchQuery('Cyclophosphamide');
-                  setSelectedTypes(new Set(['drug', 'protein', 'pathway', 'disease']));
+                  setSearchQuery("Cyclophosphamide");
+                  setSelectedTypes(
+                    new Set(["drug", "protein", "pathway", "disease"]),
+                  );
                   setSelectedRelations(new Set(allRelations));
                 }}
-                className="px-3 py-1.5 bg-[#0D9488] hover:bg-[#0F766E] text-[#FFFFFF] rounded text-xs font-semibold cursor-pointer"
+                className="px-3 py-1.5 bg-[#2F6B5E] hover:bg-[#25564B] text-[#FFFEFB] rounded text-xs font-semibold cursor-pointer"
               >
                 Reset to Default View
               </button>
             </div>
           )}
 
-          <div className="absolute bottom-3 left-3 bg-[#FFFFFF]/90 border border-[#E2E8F0] px-2.5 py-1 rounded text-[11px] font-mono text-[#64748B] pointer-events-none">
+          <div className="absolute bottom-3 left-3 bg-[#FFFEFB]/90 border border-[#E5E2DC] px-2.5 py-1 rounded text-[11px] font-mono text-[#6B746F] pointer-events-none">
             Click any node to open metadata inspection panel
           </div>
         </div>
 
         {/* Entity Inspector Drawer */}
-        <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-5 shadow-xs flex flex-col">
-          <div className="flex items-center justify-between border-b border-[#E5E5E0] pb-3 mb-4">
-            <h3 className="font-serif text-sm font-bold text-[#0F172A] uppercase tracking-wider">
+        <div className="syn-card rounded-lg p-4 flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#E5E2DC] pb-3 mb-4">
+            <h3 className="text-sm font-semibold text-[#1C2421] uppercase tracking-wide">
               Entity Inspector
             </h3>
             {selectedEntity && (
               <button
                 type="button"
                 onClick={() => setSelectedEntity(null)}
-                className="text-[#94A3B8] hover:text-[#0F172A]"
+                className="text-[#8A918C] hover:text-[#1C2421]"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -466,52 +495,62 @@ export const KnowledgeGraphPage: React.FC = () => {
           </div>
 
           {!selectedEntity ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-[#94A3B8]">
-              <Dna className="w-8 h-8 text-[#CBD5E1] mb-2" />
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-[#8A918C]">
+              <Dna className="w-8 h-8 text-[#D8D5CE] mb-2" />
               <p className="text-xs">
-                Select an entity in the graph to inspect its topological degree, annotations, and connected interactions.
+                Select an entity in the graph to inspect its topological degree,
+                annotations, and connected interactions.
               </p>
             </div>
           ) : (
             <div className="space-y-4 text-xs overflow-y-auto max-h-[500px]">
               <div>
-                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[#F1F5F9] text-[#64748B] border border-[#E2E8F0]">
+                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[#EEEBE5] text-[#6B746F] border border-[#E5E2DC]">
                   {selectedEntity.type}
                 </span>
-                <h4 className="font-serif text-lg font-bold text-[#0F172A] mt-1.5">
+                <h4 className="text-lg font-semibold text-[#1C2421] mt-1.5">
                   {selectedEntity.name}
                 </h4>
               </div>
 
-              <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded p-3 font-mono space-y-1.5">
+              <div className="bg-[#F3F1EC] border border-[#E5E2DC] rounded p-3 font-mono space-y-1.5">
                 <div className="flex justify-between">
-                  <span className="text-[#64748B]">Entity ID:</span>
-                  <span className="font-semibold text-[#0F172A]">{selectedEntity.id}</span>
+                  <span className="text-[#6B746F]">Entity ID:</span>
+                  <span className="font-semibold text-[#1C2421]">
+                    {selectedEntity.id}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#64748B]">Network Degree:</span>
-                  <span className="font-bold text-[#0D9488]">{selectedEntity.degree || connectedEdges.length}</span>
+                  <span className="text-[#6B746F]">Network Degree:</span>
+                  <span className="font-bold text-[#2F6B5E]">
+                    {selectedEntity.degree || connectedEdges.length}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#64748B]">Namespace:</span>
-                  <span className="text-[#0F172A]">PrimeKG Harmonized</span>
+                  <span className="text-[#6B746F]">Namespace:</span>
+                  <span className="text-[#1C2421]">PrimeKG Harmonized</span>
                 </div>
               </div>
 
               <div>
-                <span className="font-semibold text-[#334155] uppercase tracking-wider text-[11px] block mb-2">
+                <span className="font-semibold text-[#3D4742] uppercase tracking-wide text-[11px] block mb-2">
                   Connected Relationships ({connectedEdges.length}):
                 </span>
-                <div className="space-y-2 max-h-56 overflow-y-auto divide-y divide-[#F1F5F9]">
+                <div className="space-y-2 max-h-56 overflow-y-auto divide-y divide-[#EEEBE5]">
                   {connectedEdges.map((e, idx) => {
                     const isSource = e.source === selectedEntity.id;
                     const partner = isSource ? e.target : e.source;
                     return (
-                      <div key={idx} className="pt-1.5 flex items-center justify-between text-xs">
+                      <div
+                        key={idx}
+                        className="pt-1.5 flex items-center justify-between text-xs"
+                      >
                         <div className="truncate mr-2">
-                          <span className="font-medium text-[#0F172A]">{partner}</span>
+                          <span className="font-medium text-[#1C2421]">
+                            {partner}
+                          </span>
                         </div>
-                        <span className="font-mono text-[10px] text-[#0D9488] bg-[#F0FDFA] px-1.5 py-0.5 rounded shrink-0">
+                        <span className="font-mono text-[10px] text-[#2F6B5E] bg-[#E8F0ED] px-1.5 py-0.5 rounded shrink-0">
                           {e.relation}
                         </span>
                       </div>

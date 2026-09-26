@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Compass, SlidersHorizontal, GitFork, Cpu } from 'lucide-react';
-import type { CellLineRelevanceStatus } from '../../types/api';
-import { CellLineDropdown } from './CellLineDropdown';
+import React, { useState } from "react";
+import { Compass, SlidersHorizontal, GitFork, Cpu } from "lucide-react";
+import type { CellLineRelevanceStatus } from "../../types/api";
+import { CellLineDropdown } from "./CellLineDropdown";
 
 interface DiscoveryModeProps {
   cellLineStatus: CellLineRelevanceStatus;
@@ -12,9 +12,9 @@ interface DiscoveryModeProps {
     cellLine: string,
     maxCandidates: number,
     topK: number,
-    searchMethod: 'beam' | 'greedy' | 'mcts',
+    searchMethod: "beam" | "greedy" | "mcts",
     nSimulations?: number,
-    mctsC?: number
+    mctsC?: number,
   ) => void;
   isLoading: boolean;
 }
@@ -26,10 +26,12 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
   onRunSearch,
   isLoading,
 }) => {
-  const [disease, setDisease] = useState('glioblastoma');
+  const [disease, setDisease] = useState("glioblastoma");
   const [maxCandidates, setMaxCandidates] = useState(15);
   const [topK, setTopK] = useState(5);
-  const [searchMethod, setSearchMethod] = useState<'beam' | 'greedy' | 'mcts'>('beam');
+  const [searchMethod, setSearchMethod] = useState<"beam" | "greedy" | "mcts">(
+    "beam",
+  );
   const [nSimulations, setNSimulations] = useState(50);
   const [mctsC, setMctsC] = useState(1.414);
 
@@ -43,22 +45,22 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
       topK,
       searchMethod,
       nSimulations,
-      mctsC
+      mctsC,
     );
   };
 
   const sampleDiseases = [
-    'glioblastoma',
-    'breast neoplasm',
-    'colorectal carcinoma',
-    'ovarian cancer',
-    'renal cell carcinoma',
+    "glioblastoma",
+    "breast neoplasm",
+    "colorectal carcinoma",
+    "ovarian cancer",
+    "renal cell carcinoma",
   ];
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div>
-        <label className="block text-xs font-semibold text-[#334155] uppercase tracking-wider mb-1.5">
+        <label className="block text-xs font-semibold text-[#3A4D5C] uppercase tracking-wide mb-1.5">
           Target Indication / Neoplasm Name
         </label>
         <div className="relative">
@@ -68,18 +70,20 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
             disabled={isLoading}
             onChange={(e) => setDisease(e.target.value)}
             placeholder="e.g. glioblastoma, adenocarcinoma, breast neoplasm..."
-            className="w-full px-3.5 py-2.5 bg-[#FFFFFF] border border-[#CBD5E1] focus:border-[#0D9488] focus:ring-1 focus:ring-[#0D9488] rounded-md text-sm text-[#0F172A] outline-none font-medium"
+            className="w-full px-3.5 py-2.5 bg-[#FFFFFF] border border-[#D0DCE6] focus:border-[#0D9488] focus:ring-1 focus:ring-[#0D9488] rounded-md text-sm text-[#1A2B3C] outline-none font-medium"
             required
           />
         </div>
-        <div className="flex items-center gap-1.5 mt-2 flex-wrap text-xs text-[#64748B]">
-          <span className="text-[11px] font-medium text-[#475569]">Common indications:</span>
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap text-xs text-[#6B7C8A]">
+          <span className="text-[11px] font-medium text-[#5A6B7A]">
+            Common indications:
+          </span>
           {sampleDiseases.map((d) => (
             <button
               key={d}
               type="button"
               onClick={() => setDisease(d)}
-              className="text-[11px] bg-[#F1F5F9] hover:bg-[#E2E8F0] px-2 py-0.5 rounded text-[#334155] transition-colors"
+              className="text-[11px] bg-[#E8F0F5] hover:bg-[#E2EAF0] px-2 py-0.5 rounded text-[#3A4D5C] transition-colors"
             >
               {d}
             </button>
@@ -94,11 +98,11 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
         disabled={isLoading}
       />
 
-      <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-md p-4 space-y-4">
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2.5">
+      <div className="bg-[#EEF5F8] border border-[#E2EAF0] rounded-md p-4 space-y-4">
+        <div className="flex items-center justify-between border-b border-[#E2EAF0] pb-2.5">
           <div className="flex items-center gap-2">
-            <SlidersHorizontal className="w-3.5 h-3.5 text-[#64748B]" />
-            <span className="text-xs font-semibold text-[#334155] uppercase tracking-wider">
+            <SlidersHorizontal className="w-3.5 h-3.5 text-[#6B7C8A]" />
+            <span className="text-xs font-semibold text-[#3A4D5C] uppercase tracking-wide">
               Search Strategy & Algorithm
             </span>
           </div>
@@ -109,25 +113,27 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
 
         {/* Method Toggle Buttons */}
         <div>
-          <label className="block text-xs font-medium text-[#475569] mb-1.5">
+          <label className="block text-xs font-medium text-[#5A6B7A] mb-1.5">
             Exploration Algorithm:
           </label>
           <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
               disabled={isLoading}
-              onClick={() => setSearchMethod('beam')}
+              onClick={() => setSearchMethod("beam")}
               className={`px-3 py-2 text-xs font-semibold rounded border transition-all cursor-pointer flex flex-col items-center gap-1 ${
-                searchMethod === 'beam'
-                  ? 'bg-[#0D9488] text-[#FFFFFF] border-[#0D9488] shadow-xs'
-                  : 'bg-[#FFFFFF] text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
+                searchMethod === "beam"
+                  ? "bg-[#0D9488] text-[#FFFFFF] border-[#0D9488] shadow-xs"
+                  : "bg-[#FFFFFF] text-[#3A4D5C] border-[#D0DCE6] hover:bg-[#E8F0F5]"
               }`}
             >
               <div className="flex items-center gap-1.5">
                 <GitFork className="w-3.5 h-3.5" />
                 <span>Beam Search</span>
               </div>
-              <span className={`text-[10px] ${searchMethod === 'beam' ? 'text-teal-100' : 'text-[#64748B]'}`}>
+              <span
+                className={`text-[10px] ${searchMethod === "beam" ? "text-[#CDEEEA]" : "text-[#6B7C8A]"}`}
+              >
                 Width B=5 (Default)
               </span>
             </button>
@@ -135,18 +141,20 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
             <button
               type="button"
               disabled={isLoading}
-              onClick={() => setSearchMethod('mcts')}
+              onClick={() => setSearchMethod("mcts")}
               className={`px-3 py-2 text-xs font-semibold rounded border transition-all cursor-pointer flex flex-col items-center gap-1 ${
-                searchMethod === 'mcts'
-                  ? 'bg-[#0D9488] text-[#FFFFFF] border-[#0D9488] shadow-xs'
-                  : 'bg-[#FFFFFF] text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
+                searchMethod === "mcts"
+                  ? "bg-[#0D9488] text-[#FFFFFF] border-[#0D9488] shadow-xs"
+                  : "bg-[#FFFFFF] text-[#3A4D5C] border-[#D0DCE6] hover:bg-[#E8F0F5]"
               }`}
             >
               <div className="flex items-center gap-1.5">
                 <Cpu className="w-3.5 h-3.5" />
                 <span>MCTS (UCT)</span>
               </div>
-              <span className={`text-[10px] ${searchMethod === 'mcts' ? 'text-teal-100' : 'text-[#64748B]'}`}>
+              <span
+                className={`text-[10px] ${searchMethod === "mcts" ? "text-[#CDEEEA]" : "text-[#6B7C8A]"}`}
+              >
                 Depth 2 Rollouts
               </span>
             </button>
@@ -154,43 +162,59 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
             <button
               type="button"
               disabled={isLoading}
-              onClick={() => setSearchMethod('greedy')}
+              onClick={() => setSearchMethod("greedy")}
               className={`px-3 py-2 text-xs font-semibold rounded border transition-all cursor-pointer flex flex-col items-center gap-1 ${
-                searchMethod === 'greedy'
-                  ? 'bg-[#0D9488] text-[#FFFFFF] border-[#0D9488] shadow-xs'
-                  : 'bg-[#FFFFFF] text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
+                searchMethod === "greedy"
+                  ? "bg-[#0D9488] text-[#FFFFFF] border-[#0D9488] shadow-xs"
+                  : "bg-[#FFFFFF] text-[#3A4D5C] border-[#D0DCE6] hover:bg-[#E8F0F5]"
               }`}
             >
               <div className="flex items-center gap-1.5">
                 <Compass className="w-3.5 h-3.5" />
                 <span>Greedy Search</span>
               </div>
-              <span className={`text-[10px] ${searchMethod === 'greedy' ? 'text-teal-100' : 'text-[#64748B]'}`}>
+              <span
+                className={`text-[10px] ${searchMethod === "greedy" ? "text-[#CDEEEA]" : "text-[#6B7C8A]"}`}
+              >
                 Width B=1
               </span>
             </button>
           </div>
 
-          <p className="text-[11px] text-[#64748B] mt-2 leading-relaxed">
-            {searchMethod === 'beam' && (
-              <>Beam search expands top anchors in parallel batches, optimizing latency and coverage across high-priority disease targets.</>
+          <p className="text-[11px] text-[#6B7C8A] mt-2 leading-normal">
+            {searchMethod === "beam" && (
+              <>
+                Beam search expands top anchors in parallel batches, optimizing
+                latency and coverage across high-priority disease targets.
+              </>
             )}
-            {searchMethod === 'mcts' && (
-              <>Monte Carlo Tree Search balances exploration of under-sampled drugs with exploitation of high-synergy anchors via UCT (c={mctsC}). Cached pairs avoid redundant GNN calls.</>
+            {searchMethod === "mcts" && (
+              <>
+                Monte Carlo Tree Search balances exploration of under-sampled
+                drugs with exploitation of high-synergy anchors via UCT (c=
+                {mctsC}). Cached pairs avoid redundant GNN calls.
+              </>
             )}
-            {searchMethod === 'greedy' && (
-              <>Greedy search expands exclusively from the single top candidate anchor drug, evaluating its immediate partner space.</>
+            {searchMethod === "greedy" && (
+              <>
+                Greedy search expands exclusively from the single top candidate
+                anchor drug, evaluating its immediate partner space.
+              </>
             )}
           </p>
         </div>
 
         {/* MCTS Specific Controls */}
-        {searchMethod === 'mcts' && (
-          <div className="p-3 bg-[#F0FDFA] border border-[#99F6E4] rounded-md space-y-3">
+        {searchMethod === "mcts" && (
+          <div className="p-3 bg-[#E6F7F5] border border-[#A5D9D4] rounded-md space-y-3">
             <div>
               <div className="flex justify-between text-xs mb-1">
-                <span className="text-[#0F766E] font-medium">MCTS Simulation Budget:</span>
-                <span className="font-mono font-bold text-[#0F766E]">{nSimulations} rollouts</span>
+                <span className="text-[#0B7C78] font-medium">
+                  MCTS Simulation Budget:
+                </span>
+                <span className="font-mono font-bold text-[#0B7C78]">
+                  {nSimulations} rollouts
+                </span>
               </div>
               <input
                 type="range"
@@ -202,7 +226,7 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
                 onChange={(e) => setNSimulations(Number(e.target.value))}
                 className="w-full accent-[#0D9488]"
               />
-              <div className="flex justify-between text-[10px] text-[#0F766E] opacity-80">
+              <div className="flex justify-between text-[10px] text-[#0B7C78] opacity-80">
                 <span>Fast (20)</span>
                 <span>Balanced (50)</span>
                 <span>Thorough (100, hard 15s cap)</span>
@@ -211,8 +235,12 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
 
             <div>
               <div className="flex justify-between text-xs mb-1">
-                <span className="text-[#0F766E] font-medium">UCT Exploration Constant (c):</span>
-                <span className="font-mono font-bold text-[#0F766E]">{mctsC.toFixed(2)}</span>
+                <span className="text-[#0B7C78] font-medium">
+                  UCT Exploration Constant (c):
+                </span>
+                <span className="font-mono font-bold text-[#0B7C78]">
+                  {mctsC.toFixed(2)}
+                </span>
               </div>
               <div className="flex gap-2">
                 {[1.0, 1.414, 2.0].map((val) => (
@@ -223,16 +251,17 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
                     onClick={() => setMctsC(val)}
                     className={`px-2.5 py-1 text-xs rounded border transition-colors cursor-pointer ${
                       Math.abs(mctsC - val) < 0.01
-                        ? 'bg-[#0D9488] text-[#FFFFFF] border-[#0D9488]'
-                        : 'bg-[#FFFFFF] text-[#334155] border-[#CBD5E1] hover:bg-teal-50'
+                        ? "bg-[#0D9488] text-[#FFFFFF] border-[#0D9488]"
+                        : "bg-[#FFFFFF] text-[#3A4D5C] border-[#D0DCE6] hover:bg-[#E6F7F5]"
                     }`}
                   >
-                    {val === 1.414 ? '1.41 (Default)' : val.toFixed(1)}
+                    {val === 1.414 ? "1.41 (Default)" : val.toFixed(1)}
                   </button>
                 ))}
               </div>
-              <span className="text-[10px] text-[#0F766E] opacity-80 mt-1 block">
-                Balances exploiting high-synergy anchors vs exploring under-sampled drug families.
+              <span className="text-[10px] text-[#0B7C78] opacity-80 mt-1 block">
+                Balances exploiting high-synergy anchors vs exploring
+                under-sampled drug families.
               </span>
             </div>
           </div>
@@ -241,8 +270,8 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
           <div>
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-[#64748B]">Candidate Pool Size:</span>
-              <span className="font-mono font-semibold text-[#0F172A]">
+              <span className="text-[#6B7C8A]">Candidate Pool Size:</span>
+              <span className="font-mono font-semibold text-[#1A2B3C]">
                 {maxCandidates} drugs
               </span>
             </div>
@@ -256,15 +285,18 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
               onChange={(e) => setMaxCandidates(Number(e.target.value))}
               className="w-full accent-[#0D9488]"
             />
-            <span className="text-[10px] text-[#94A3B8]">
-              Filtered therapeutic candidates ({maxCandidates * (maxCandidates - 1) / 2} max pairs)
+            <span className="text-[10px] text-[#8A9BAA]">
+              Filtered therapeutic candidates (
+              {(maxCandidates * (maxCandidates - 1)) / 2} max pairs)
             </span>
           </div>
 
           <div>
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-[#64748B]">Explain Top-K Combinations:</span>
-              <span className="font-mono font-semibold text-[#0F172A]">
+              <span className="text-[#6B7C8A]">
+                Explain Top-K Combinations:
+              </span>
+              <span className="font-mono font-semibold text-[#1A2B3C]">
                 {topK} pairs
               </span>
             </div>
@@ -278,7 +310,7 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
               onChange={(e) => setTopK(Number(e.target.value))}
               className="w-full accent-[#0D9488]"
             />
-            <span className="text-[10px] text-[#94A3B8]">
+            <span className="text-[10px] text-[#8A9BAA]">
               Attribution explanations on top-{topK} candidates
             </span>
           </div>
@@ -288,14 +320,14 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
       <button
         type="submit"
         disabled={isLoading || !disease.trim() || !selectedCellLine}
-        className="w-full py-3 bg-[#0D9488] hover:bg-[#0F766E] disabled:bg-[#94A3B8] text-[#FFFFFF] rounded-md font-semibold text-sm flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+        className="w-full py-3 bg-[#0D9488] hover:bg-[#0B7C78] disabled:bg-[#8A9BAA] text-[#FFFFFF] rounded-md font-semibold text-sm flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
       >
         <Compass className="w-4 h-4" />
         {isLoading
-          ? searchMethod === 'mcts'
-            ? 'Running MCTS Tree Search & Rollouts...'
-            : 'Searching Candidate Space...'
-          : `Run ${searchMethod === 'mcts' ? 'MCTS Discovery' : searchMethod === 'greedy' ? 'Greedy Search' : 'Beam Search'}`}
+          ? searchMethod === "mcts"
+            ? "Running MCTS Tree Search & Rollouts..."
+            : "Searching Candidate Space..."
+          : `Run ${searchMethod === "mcts" ? "MCTS Discovery" : searchMethod === "greedy" ? "Greedy Search" : "Beam Search"}`}
       </button>
     </form>
   );
