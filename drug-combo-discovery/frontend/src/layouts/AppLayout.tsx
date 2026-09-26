@@ -3,7 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { Navigation } from './Navigation';
 import { checkHealth } from '../services/api';
 import type { HealthResponse } from '../types/api';
-import { Cpu, Activity, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 
 export const AppLayout: React.FC = () => {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -12,94 +12,130 @@ export const AppLayout: React.FC = () => {
   useEffect(() => {
     let isMounted = true;
     checkHealth()
-      .then((res) => {
-        if (isMounted) {
-          setHealth(res);
-          setHealthError(null);
-        }
-      })
-      .catch((err) => {
-        if (isMounted) {
-          setHealthError(err.message);
-        }
-      });
-    return () => {
-      isMounted = false;
-    };
+      .then((res) => { if (isMounted) { setHealth(res); setHealthError(null); } })
+      .catch((err) => { if (isMounted) setHealthError(err.message); });
+    return () => { isMounted = false; };
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FBFBF9] text-[#0F172A]">
-      {/* Top Research Header */}
-      <header className="bg-[#FFFFFF] border-b border-[#E5E5E0] px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-md bg-[#181A1E] flex items-center justify-center text-[#0D9488] font-serif font-bold text-xl shadow-xs">
-            Ψ
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-serif text-xl font-bold tracking-tight text-[#0F172A]">
-                Synthera
-              </h1>
-              <span className="font-mono text-[10px] uppercase px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#64748B] border border-[#E2E8F0]">
-                v1.0.0 &bull; Research
-              </span>
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--bg)' }}>
+      {/* App Header */}
+      <header style={{
+        backgroundColor: 'var(--surface)',
+        borderBottom: '1px solid var(--border)',
+      }}>
+        <div className="max-w-screen-xl mx-auto px-5 sm:px-8 h-14 flex items-center justify-between gap-4">
+          {/* Brand */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div style={{
+              width: 30, height: 30,
+              backgroundColor: 'var(--text-primary)',
+              borderRadius: 6,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--accent)',
+              fontFamily: 'var(--font-serif)',
+              fontWeight: 700,
+              fontSize: 17,
+              letterSpacing: '-0.02em',
+              flexShrink: 0,
+            }}>
+              Ψ
             </div>
-            <p className="text-[11px] text-[#717784] font-medium leading-tight">
-              Explainable Drug Combination Discovery & Mechanistic Verification in Multi-Drug Resistant Oncology
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <span style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontWeight: 700,
+                  fontSize: 18,
+                  color: 'var(--text-primary)',
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1,
+                }}>
+                  SynThera
+                </span>
+                <span style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  color: 'var(--text-muted)',
+                  backgroundColor: 'var(--surface-subtle)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 4,
+                  padding: '2px 6px',
+                  letterSpacing: '0.04em',
+                }}>
+                  RESEARCH
+                </span>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.2, marginTop: 1 }}>
+                Drug Combination Discovery
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* Live System Status */}
-        <div className="flex items-center gap-2 font-mono text-xs">
-          {health ? (
-            <div className="flex items-center gap-2.5 bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-1.5 rounded-md text-[#475569]">
-              <span className="flex items-center gap-1.5 text-[#059669] font-medium">
-                <span className="w-2 h-2 rounded-full bg-[#059669] animate-pulse" />
-                Backend Operational
-              </span>
-              <span className="text-[#CBD5E1]">&bull;</span>
-              <span className="flex items-center gap-1 text-[#0F172A]">
-                <Cpu className="w-3.5 h-3.5 text-[#64748B]" />
-                {health.device.toUpperCase()}
-              </span>
-              <span className="text-[#CBD5E1]">&bull;</span>
-              <span className="text-[#64748B]">
-                {health.total_drugs.toLocaleString()} drugs / {health.total_cell_lines} lines
-              </span>
-            </div>
-          ) : healthError ? (
-            <div className="flex items-center gap-1.5 bg-[#FEF2F2] border border-[#FECACA] px-2.5 py-1 rounded text-[#991B1B] text-[11px]">
-              <AlertCircle className="w-3.5 h-3.5 text-[#DC2626]" />
-              Analysis Service Offline (Check VITE_API_BASE_URL)
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-[11px] text-[#94A3B8]">
-              <Activity className="w-3.5 h-3.5 animate-spin" />
-              Polling service status...
-            </div>
-          )}
+          {/* System Status */}
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+            {health ? (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                backgroundColor: 'var(--surface-subtle)',
+                border: '1px solid var(--border)',
+                borderRadius: 6, padding: '5px 10px',
+                color: 'var(--text-secondary)',
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--synergy)', fontWeight: 600 }}>
+                  <span style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    backgroundColor: 'var(--synergy)', display: 'inline-block'
+                  }} />
+                  Online
+                </span>
+                <span style={{ color: 'var(--border-strong)' }}>·</span>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  {health.device.toUpperCase()} · {health.total_drugs.toLocaleString()} compounds
+                </span>
+              </div>
+            ) : healthError ? (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                backgroundColor: 'var(--error-subtle)',
+                border: '1px solid var(--error-border)',
+                borderRadius: 6, padding: '5px 10px',
+                color: 'var(--error)',
+              }}>
+                <AlertCircle size={12} />
+                <span>Backend offline</span>
+              </div>
+            ) : (
+              <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  backgroundColor: 'var(--border-strong)', display: 'inline-block'
+                }} />
+                Connecting…
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* Primary Navigation Tabs */}
+      {/* Navigation */}
       <Navigation />
 
-      {/* Main Content Viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+      {/* Page content */}
+      <main className="flex-1 max-w-screen-xl w-full mx-auto px-5 sm:px-8 py-7">
         <Outlet />
       </main>
 
-      {/* Scientific Provenance Footer */}
-      <footer className="bg-[#FFFFFF] border-t border-[#E5E5E0] px-6 py-4 mt-auto">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between text-[11px] text-[#717784] font-mono gap-2">
-          <div>
-            Synthera Biocomputational System &bull; PrimeKG Heterogeneous Knowledge Graph &bull; Heterogeneous Graph Transformer (HGT)
-          </div>
-          <div>
-            Dual In-Silico Faithfulness (Necessity & Sufficiency) &bull; NCBI PubMed E-Utilities
-          </div>
+      {/* Footer */}
+      <footer style={{
+        backgroundColor: 'var(--surface)',
+        borderTop: '1px solid var(--border)',
+        padding: '14px 32px',
+      }}>
+        <div className="max-w-screen-xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2"
+          style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          <span>SynThera · PrimeKG · HGT Neural Network · DrugComb</span>
+          <span>Dual In-Silico Faithfulness · NCBI PubMed</span>
         </div>
       </footer>
     </div>

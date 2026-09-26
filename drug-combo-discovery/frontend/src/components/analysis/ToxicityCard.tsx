@@ -45,64 +45,24 @@ export const ToxicityCard: React.FC<ToxicityCardProps> = ({ prediction }) => {
   const toxPenalty = ranking?.toxicity_penalty ?? null;
 
   return (
-    <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-5 shadow-xs mb-6 space-y-4">
-      {/* Header & Multi-Objective Equation Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#E5E5E0] pb-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <h3 className="text-xs font-semibold text-[#0F172A] uppercase tracking-wider">
-              Phase B Toxicity & Multi-Objective Ranking
-            </h3>
-            <ToxicityBadge
-              hasKnownDdi={hasKnownDdi}
-              unknownRiskApplied={unknownRiskApplied}
-              sideEffectOverlap={sideEffectOverlap}
-              toxicityPenalty={toxPenalty}
-              size="sm"
-            />
-          </div>
-          <p className="text-[11px] text-[#64748B]">
-            Tri-objective evaluation balancing calibrated synergy against adverse DDI risks, phenotypic SIDER overlap, and target redundancy
-          </p>
-        </div>
-
-        {/* Live V(pair) Score Capsule */}
-        <div className="flex items-center gap-3 bg-[#F8FAFC] border border-[#E2E8F0] px-3.5 py-2 rounded-md font-mono text-xs shrink-0">
-          <div>
-            <span className="text-[9px] uppercase text-[#64748B] block font-sans">
-              Composite V(pair)
-            </span>
-            <span className="font-bold text-sm text-[#0D9488]">
-              {vScore.toFixed(4)}
-            </span>
-          </div>
-          <div className="h-6 w-px bg-[#CBD5E1]" />
-          <div>
-            <span className="text-[9px] uppercase text-[#64748B] block font-sans">
-              p(Synergy)
-            </span>
-            <span className="font-semibold text-xs text-[#059669]">
-              {pSyn.toFixed(4)}
-            </span>
-          </div>
+    <div className="space-y-4">
+      {/* V-score summary capsule */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+          <span style={{ color: 'var(--text-muted)' }}>V(pair):</span>
+          <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--accent)' }}>{vScore.toFixed(4)}</span>
+          <span style={{ color: 'var(--text-muted)' }}>p(syn): <strong style={{ color: 'var(--synergy)' }}>{pSyn.toFixed(4)}</strong></span>
           {toxPenalty !== null && (
-            <>
-              <div className="h-6 w-px bg-[#CBD5E1]" />
-              <div>
-                <span className="text-[9px] uppercase text-[#64748B] block font-sans">
-                  Tox Penalty
-                </span>
-                <span
-                  className={`font-semibold text-xs ${
-                    toxPenalty > 0.4 ? 'text-[#DC2626]' : toxPenalty > 0.1 ? 'text-[#D97706]' : 'text-[#059669]'
-                  }`}
-                >
-                  {toxPenalty.toFixed(4)}
-                </span>
-              </div>
-            </>
+            <span style={{ color: 'var(--text-muted)' }}>tox: <strong style={{ color: toxPenalty > 0.4 ? 'var(--antagonism)' : toxPenalty > 0.1 ? 'var(--additive)' : 'var(--synergy)' }}>{toxPenalty.toFixed(4)}</strong></span>
           )}
         </div>
+        <ToxicityBadge
+          hasKnownDdi={hasKnownDdi}
+          unknownRiskApplied={unknownRiskApplied}
+          sideEffectOverlap={sideEffectOverlap}
+          toxicityPenalty={toxPenalty}
+          size="sm"
+        />
       </div>
 
       {/* Persistent Clinical Interpretation Caveat */}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, ShieldAlert, Clock, ArrowDownRight, Check, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, Clock, ArrowDownRight, Check, AlertTriangle } from 'lucide-react';
 import type { PredictionResult } from '../../types/api';
 
 interface FaithfulnessCardProps {
@@ -38,53 +38,46 @@ export const FaithfulnessCard: React.FC<FaithfulnessCardProps> = ({ prediction }
   );
 
   return (
-    <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-5 shadow-xs mb-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            {!isAvailable ? (
-              <Clock className="w-4 h-4 text-[#64748B]" />
-            ) : errorMsg ? (
-              <AlertTriangle className="w-4 h-4 text-[#DC2626]" />
-            ) : isVerified ? (
-              <ShieldCheck className="w-4 h-4 text-[#059669]" />
-            ) : (
-              <ShieldAlert className="w-4 h-4 text-[#D97706]" />
-            )}
-            <h3 className="font-serif text-lg font-bold text-[#0F172A]">
-              Explanation Verification & Graph Faithfulness
-            </h3>
-          </div>
-          <p className="text-xs text-[#717784] mt-0.5">
-            In-silico graph ablation testing whether explanation edges are computationally necessary and sufficient
-          </p>
-        </div>
-
-        {/* Verdict Badge */}
-        <div>
-          {!isAvailable ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1] rounded text-xs font-mono font-medium">
-              <Clock className="w-3.5 h-3.5 text-[#64748B]" />
-              Verification pending — not yet available
-            </span>
-          ) : errorMsg ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#FEF2F2] text-[#B91C1C] border border-[#FECACA] rounded text-xs font-mono font-bold">
-              <AlertTriangle className="w-3.5 h-3.5 text-[#DC2626]" />
-              Ablation evaluation error
-            </span>
-          ) : isVerified ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0] rounded text-xs font-mono font-bold">
-              <Check className="w-3.5 h-3.5 text-[#059669]" />
-              Verified explanation
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A] rounded text-xs font-mono font-bold">
-              <ShieldAlert className="w-3.5 h-3.5 text-[#D97706]" />
-              Explanation requires further verification
-            </span>
-          )}
-        </div>
+    <div>
+      {/* Verdict status bar */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        {!isAvailable ? (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '4px 10px', fontSize: 11, fontFamily: 'var(--font-mono)',
+            backgroundColor: 'var(--surface-subtle)', border: '1px solid var(--border)',
+            color: 'var(--text-muted)', borderRadius: 4,
+          }}>
+            <Clock size={11} /> Verification pending
+          </span>
+        ) : errorMsg ? (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '4px 10px', fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700,
+            backgroundColor: 'var(--error-subtle)', border: '1px solid var(--error-border)',
+            color: 'var(--error)', borderRadius: 4,
+          }}>
+            <AlertTriangle size={11} /> Ablation error
+          </span>
+        ) : isVerified ? (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '4px 10px', fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700,
+            backgroundColor: 'var(--synergy-subtle)', border: '1px solid var(--synergy-border)',
+            color: 'var(--synergy-text)', borderRadius: 4,
+          }}>
+            <Check size={11} /> Verified explanation
+          </span>
+        ) : (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '4px 10px', fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700,
+            backgroundColor: 'var(--warning-subtle)', border: '1px solid var(--warning-border)',
+            color: 'var(--warning)', borderRadius: 4,
+          }}>
+            <ShieldAlert size={11} /> Requires further verification
+          </span>
+        )}
       </div>
 
       {!isAvailable ? (

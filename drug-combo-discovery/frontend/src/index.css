@@ -6,113 +6,189 @@
     --font-serif: 'Fraunces', Georgia, Cambria, 'Times New Roman', Times, serif;
     --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-    /* Scientific Palette */
-    --color-bg: #FBFBF9;
-    --color-surface: #FFFFFF;
-    --color-surface-subtle: #F4F4F1;
-    --color-surface-hover: #ECECE8;
-    
-    --color-border: #E5E5E0;
-    --color-border-strong: #D1D1CB;
-    
-    --color-text-primary: #181A1E;
-    --color-text-secondary: #4A505A;
-    --color-text-muted: #717784;
+    /* ── Backgrounds ── */
+    --bg: #F6F6F3;
+    --surface: #FFFFFF;
+    --surface-subtle: #F2F2EF;
+    --surface-hover: #EAEAE6;
 
-    /* Interactive Accent: Clinical Deep Teal */
-    --color-accent: #0D9488;
-    --color-accent-hover: #0F766E;
-    --color-accent-subtle: #F0FDFA;
-    --color-accent-border: #99F6E4;
+    /* ── Borders ── */
+    --border: #E2E2DC;
+    --border-strong: #CCCCC6;
 
-    /* Literature Accent: Warm Amber Ochre */
-    --color-literature: #B45309;
-    --color-literature-subtle: #FEF3C7;
-    --color-literature-border: #FDE68A;
+    /* ── Typography ── */
+    --text-primary: #1A1C1F;
+    --text-secondary: #474F5A;
+    --text-muted: #717880;
+    --text-xmuted: #9BA3AD;
 
-    /* Semantic States */
-    --color-synergy: #059669;
-    --color-synergy-subtle: #ECFDF5;
-    --color-synergy-border: #A7F3D0;
+    /* ── Accent: Clinical teal ── */
+    --accent: #0B8A81;
+    --accent-dark: #0A7A72;
+    --accent-subtle: #EEF9F8;
+    --accent-border: #A3E8E3;
+    --accent-text: #065C57;
 
-    --color-antagonism: #DC2626;
-    --color-antagonism-subtle: #FEF2F2;
-    --color-antagonism-border: #FECACA;
+    /* ── Semantic ── */
+    --synergy: #0C7A50;
+    --synergy-subtle: #EDFAF4;
+    --synergy-border: #A2DFC2;
+    --synergy-text: #065535;
 
-    --color-additive: #D97706;
-    --color-additive-subtle: #FFFBEB;
-    --color-additive-border: #FDE68A;
+    --antagonism: #B41C1C;
+    --antagonism-subtle: #FEF1F1;
+    --antagonism-border: #FBC5C5;
+    --antagonism-text: #7C1010;
+
+    --additive: #B86010;
+    --additive-subtle: #FEF6EE;
+    --additive-border: #F7CFA5;
+    --additive-text: #7C3F07;
+
+    /* ── Literature amber ── */
+    --lit: #A35008;
+    --lit-subtle: #FEF4E8;
+    --lit-border: #F5D4A8;
+    --lit-text: #6B340500;
+
+    /* ── State ── */
+    --warning: #CA8A04;
+    --warning-subtle: #FEFCE8;
+    --warning-border: #FDE68A;
+
+    --error: #B91C1C;
+    --error-subtle: #FEF2F2;
+    --error-border: #FECACA;
+
+    /* ── Shadows ── */
+    --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 8px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
   }
 
   body {
     font-family: var(--font-sans);
-    background-color: var(--color-bg);
-    color: var(--color-text-primary);
+    background-color: var(--bg);
+    color: var(--text-primary);
     min-height: 100vh;
     overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-size: 14px;
+    line-height: 1.5;
   }
 
-  h1, h2, h3, .font-serif {
-    font-family: var(--font-serif);
+  h1, h2, h3, h4 {
+    line-height: 1.25;
+    letter-spacing: -0.01em;
   }
 
   code, pre, .font-mono {
     font-family: var(--font-mono);
   }
+
+  /* Focus ring - accessible & clean */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
 }
 
-/* Custom scrollbars for data tables and graph inspectors */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* ── Custom scrollbars ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #CCCCC6; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9BA3AD; }
+
+/* ── Accordion transition ── */
+.accordion-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease;
+}
+.accordion-content.open {
+  grid-template-rows: 1fr;
+}
+.accordion-inner {
+  overflow: hidden;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+/* ── Subtle pattern for hero area ── */
+.hero-surface {
+  background-color: var(--surface);
+  background-image:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--accent) 4%, transparent) 0%, transparent 60%),
+    radial-gradient(circle at 0% 100%, color-mix(in srgb, var(--synergy) 3%, transparent) 0%, transparent 50%);
 }
 
-::-webkit-scrollbar-thumb {
-  background: #D1D1CB;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #9CA3AF;
-}
-
-/* React Flow custom styling overrides for scientific instrument theme */
-.react-flow__renderer {
-  background-color: #F8F9FA !important;
-}
-
+/* ── React Flow overrides ── */
+.react-flow__renderer { background-color: #F5F5F2 !important; }
 .react-flow__handle {
-  width: 7px !important;
-  height: 7px !important;
+  width: 7px !important; height: 7px !important;
   border-radius: 2px !important;
-  background-color: #4A505A !important;
+  background-color: var(--text-secondary) !important;
   border: 1px solid #FFFFFF !important;
 }
-
 .react-flow__controls {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
-  border: 1px solid #E5E5E0 !important;
+  box-shadow: var(--shadow-xs) !important;
+  border: 1px solid var(--border) !important;
   border-radius: 6px !important;
   overflow: hidden !important;
 }
-
 .react-flow__controls-button {
-  background-color: #FFFFFF !important;
-  border-bottom: 1px solid #E5E5E0 !important;
-  color: #334155 !important;
-  width: 28px !important;
-  height: 28px !important;
+  background-color: var(--surface) !important;
+  border-bottom: 1px solid var(--border) !important;
+  color: var(--text-secondary) !important;
+  width: 28px !important; height: 28px !important;
+}
+.react-flow__controls-button:hover { background-color: var(--surface-subtle) !important; }
+
+/* ── Probability bar animation ── */
+@keyframes barGrow {
+  from { width: 0%; }
+  to   { width: var(--target-width); }
 }
 
-.react-flow__controls-button:hover {
-  background-color: #F1F5F9 !important;
+/* ── Spin animation for LoadingStages inline usage ── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
-/* Respect user preference for reduced motion */
+
+/* ── Skeleton loading ── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #EAEAE6 25%, #F2F2EF 50%, #EAEAE6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+/* ── Table ── */
+.data-table { border-collapse: collapse; width: 100%; }
+.data-table th {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text-muted);
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.data-table td {
+  padding: 10px 12px; border-bottom: 1px solid var(--surface-subtle);
+  font-size: 13px; vertical-align: top;
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background-color: var(--surface-subtle); }
+
+/* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;

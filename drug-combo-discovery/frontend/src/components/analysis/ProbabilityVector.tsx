@@ -5,135 +5,153 @@ interface ProbabilityVectorProps {
   prediction: PredictionResult;
 }
 
+interface ClassRow {
+  label: string;
+  prob: number;
+  isActive: boolean;
+  color: string;
+  subtleColor: string;
+  borderColor: string;
+}
+
 export const ProbabilityVector: React.FC<ProbabilityVectorProps> = ({ prediction }) => {
   const pSyn = prediction.p_synergy ?? 0;
   const pAdd = prediction.p_additive ?? 0;
   const pAnt = prediction.p_antagonism ?? 0;
 
-  const synWidth = Math.max(0, Math.min(100, Math.round(pSyn * 100)));
-  const addWidth = Math.max(0, Math.min(100, Math.round(pAdd * 100)));
-  const antWidth = Math.max(0, Math.min(100, 100 - synWidth - addWidth));
+  const rows: ClassRow[] = [
+    {
+      label: 'Synergy',
+      prob: pSyn,
+      isActive: prediction.predicted_class === 'synergy',
+      color: 'var(--synergy)',
+      subtleColor: 'var(--synergy-subtle)',
+      borderColor: 'var(--synergy-border)',
+    },
+    {
+      label: 'Additive',
+      prob: pAdd,
+      isActive: prediction.predicted_class === 'additive',
+      color: 'var(--additive)',
+      subtleColor: 'var(--additive-subtle)',
+      borderColor: 'var(--additive-border)',
+    },
+    {
+      label: 'Antagonism',
+      prob: pAnt,
+      isActive: prediction.predicted_class === 'antagonism',
+      color: 'var(--antagonism)',
+      subtleColor: 'var(--antagonism-subtle)',
+      borderColor: 'var(--antagonism-border)',
+    },
+  ];
 
   return (
-    <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-5 shadow-xs mb-6">
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h3 className="text-xs font-semibold text-[#0F172A] uppercase tracking-wider">
-            Calibrated Class Probability Distribution
-          </h3>
-          <p className="text-[11px] text-[#717784] mt-0.5">
-            Probability simplex evaluated via temperature-calibrated softmax over GNN logits
-          </p>
-        </div>
-        <span className="font-mono text-xs text-[#475569] bg-[#F8FAFC] border border-[#E2E8F0] px-2 py-0.5 rounded">
-          Σ p = 1.0000
-        </span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Stacked full bar */}
+      <div style={{
+        width: '100%', height: 8,
+        borderRadius: 4, overflow: 'hidden',
+        display: 'flex',
+        backgroundColor: 'var(--surface-subtle)',
+        border: '1px solid var(--border)',
+      }}>
+        {rows.map((r) => (
+          <div
+            key={r.label}
+            style={{
+              width: `${(r.prob * 100).toFixed(2)}%`,
+              height: '100%',
+              backgroundColor: r.color,
+              transition: 'width 600ms ease',
+            }}
+            title={`${r.label}: ${(r.prob * 100).toFixed(1)}%`}
+          />
+        ))}
       </div>
 
-      {/* Stacked Probability Bar */}
-      <div className="w-full h-4 rounded bg-[#F1F5F9] overflow-hidden flex border border-[#E2E8F0] mb-3">
-        {synWidth > 0 && (
+      {/* Per-class rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {rows.map((r) => (
           <div
-            style={{ width: `${synWidth}%` }}
-            className="bg-[#059669] transition-all duration-500 relative group"
-            title={`Synergy: ${(pSyn * 100).toFixed(1)}%`}
-          />
-        )}
-        {addWidth > 0 && (
-          <div
-            style={{ width: `${addWidth}%` }}
-            className="bg-[#D97706] transition-all duration-500 relative group"
-            title={`Additive: ${(pAdd * 100).toFixed(1)}%`}
-          />
-        )}
-        {antWidth > 0 && (
-          <div
-            style={{ width: `${antWidth}%` }}
-            className="bg-[#DC2626] transition-all duration-500 relative group"
-            title={`Antagonism: ${(pAnt * 100).toFixed(1)}%`}
-          />
-        )}
+            key={r.label}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '9px 12px',
+              backgroundColor: r.isActive ? r.subtleColor : 'var(--surface-subtle)',
+              border: `1px solid ${r.isActive ? r.borderColor : 'var(--border)'}`,
+              borderRadius: 6,
+              transition: 'background-color 200ms, border-color 200ms',
+            }}
+          >
+            {/* Color swatch */}
+            <div style={{
+              width: 10, height: 10, borderRadius: 2,
+              backgroundColor: r.color, flexShrink: 0,
+            }} />
+
+            {/* Label */}
+            <span style={{
+              fontSize: 13, fontWeight: r.isActive ? 600 : 400,
+              color: r.isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+              width: 80, flexShrink: 0,
+            }}>
+              {r.label}
+            </span>
+
+            {/* Bar */}
+            <div style={{ flex: 1, position: 'relative' }}>
+              <div style={{
+                width: '100%', height: 5,
+                backgroundColor: 'var(--border)',
+                borderRadius: 3, overflow: 'hidden',
+              }}>
+                <div style={{
+                  width: `${(r.prob * 100).toFixed(2)}%`,
+                  height: '100%',
+                  backgroundColor: r.color,
+                  borderRadius: 3,
+                  transition: 'width 600ms ease',
+                }} />
+              </div>
+            </div>
+
+            {/* Numeric */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexShrink: 0 }}>
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 14, fontWeight: 700,
+                color: r.isActive ? r.color : 'var(--text-secondary)',
+              }}>
+                {(r.prob * 100).toFixed(1)}%
+              </span>
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)',
+              }}>
+                {r.prob.toFixed(4)}
+              </span>
+              {r.isActive && (
+                <span style={{
+                  fontSize: 9, fontWeight: 700, fontFamily: 'var(--font-mono)',
+                  letterSpacing: '0.06em', textTransform: 'uppercase',
+                  backgroundColor: r.subtleColor,
+                  border: `1px solid ${r.borderColor}`,
+                  color: r.color,
+                  borderRadius: 3, padding: '1px 5px',
+                }}>
+                  predicted
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Numerical Metrics */}
-      <div className="grid grid-cols-3 gap-3">
-        <div
-          className={`p-2.5 rounded border transition-colors ${
-            prediction.predicted_class === 'synergy'
-              ? 'bg-[#ECFDF5] border-[#A7F3D0]'
-              : 'bg-[#F8FAFC] border-[#E2E8F0]'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-semibold text-[#047857] uppercase tracking-wider flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#059669]" />
-              p(Synergy)
-            </span>
-            {prediction.predicted_class === 'synergy' && (
-              <span className="text-[9px] uppercase font-mono px-1 bg-[#D1FAE5] text-[#065F46] rounded">
-                Predicted
-              </span>
-            )}
-          </div>
-          <span className="font-mono text-base font-bold text-[#065F46]">
-            {pSyn.toFixed(4)}
-          </span>
-          <span className="text-[10px] font-mono text-[#059669] ml-1.5">
-            ({(pSyn * 100).toFixed(1)}%)
-          </span>
-        </div>
-
-        <div
-          className={`p-2.5 rounded border transition-colors ${
-            prediction.predicted_class === 'additive'
-              ? 'bg-[#FFFBEB] border-[#FDE68A]'
-              : 'bg-[#F8FAFC] border-[#E2E8F0]'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-semibold text-[#B45309] uppercase tracking-wider flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#D97706]" />
-              p(Additive)
-            </span>
-            {prediction.predicted_class === 'additive' && (
-              <span className="text-[9px] uppercase font-mono px-1 bg-[#FEF3C7] text-[#92400E] rounded">
-                Predicted
-              </span>
-            )}
-          </div>
-          <span className="font-mono text-base font-bold text-[#92400E]">
-            {pAdd.toFixed(4)}
-          </span>
-          <span className="text-[10px] font-mono text-[#D97706] ml-1.5">
-            ({(pAdd * 100).toFixed(1)}%)
-          </span>
-        </div>
-
-        <div
-          className={`p-2.5 rounded border transition-colors ${
-            prediction.predicted_class === 'antagonism'
-              ? 'bg-[#FEF2F2] border-[#FECACA]'
-              : 'bg-[#F8FAFC] border-[#E2E8F0]'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-semibold text-[#B91C1C] uppercase tracking-wider flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#DC2626]" />
-              p(Antagonism)
-            </span>
-            {prediction.predicted_class === 'antagonism' && (
-              <span className="text-[9px] uppercase font-mono px-1 bg-[#FEE2E2] text-[#991B1B] rounded">
-                Predicted
-              </span>
-            )}
-          </div>
-          <span className="font-mono text-base font-bold text-[#991B1B]">
-            {pAnt.toFixed(4)}
-          </span>
-          <span className="text-[10px] font-mono text-[#DC2626] ml-1.5">
-            ({(pAnt * 100).toFixed(1)}%)
-          </span>
-        </div>
+      {/* Sum check */}
+      <div style={{
+        fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)',
+        textAlign: 'right',
+      }}>
+        Σ p = {(pSyn + pAdd + pAnt).toFixed(4)} · Temperature-calibrated softmax
       </div>
     </div>
   );
