@@ -1,29 +1,29 @@
-import React from 'react';
+import React from "react";
 
 interface MetricPillProps {
   label: string;
   value: string | number;
   subtext?: string;
-  variant?: 'default' | 'accent' | 'success' | 'danger' | 'warning';
+  variant?: "default" | "accent" | "success" | "danger" | "warning";
 }
 
 export const MetricPill: React.FC<MetricPillProps> = ({
   label,
   value,
   subtext,
-  variant = 'default',
+  variant = "default",
 }) => {
   const valueColor = {
-    default: 'text-[#0F172A]',
-    accent: 'text-[#0D9488]',
-    success: 'text-[#059669]',
-    danger: 'text-[#DC2626]',
-    warning: 'text-[#D97706]',
+    default: "text-[#1A2B3C]",
+    accent: "text-[#0D9488]",
+    success: "text-[#0F9B8F]",
+    danger: "text-[#C45C6A]",
+    warning: "text-[#B8893D]",
   }[variant];
 
   return (
-    <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-md px-3 py-2 flex flex-col justify-between shadow-xs">
-      <span className="text-[11px] font-medium text-[#717784] uppercase tracking-wider">
+    <div className="bg-[#FFFFFF] border border-[#E2EAF0] rounded-md px-3 py-2 flex flex-col justify-between shadow-xs">
+      <span className="text-[11px] font-medium text-[#7A8B9A] uppercase tracking-wide">
         {label}
       </span>
       <div className="flex items-baseline gap-1 mt-0.5">
@@ -31,7 +31,9 @@ export const MetricPill: React.FC<MetricPillProps> = ({
           {value}
         </span>
         {subtext && (
-          <span className="text-[11px] text-[#717784] font-mono">{subtext}</span>
+          <span className="text-[11px] text-[#7A8B9A] font-mono">
+            {subtext}
+          </span>
         )}
       </div>
     </div>

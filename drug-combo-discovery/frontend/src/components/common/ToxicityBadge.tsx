@@ -1,12 +1,12 @@
-import React from 'react';
-import { ShieldCheck, AlertTriangle, HelpCircle } from 'lucide-react';
+import React from "react";
+import { ShieldCheck, AlertTriangle, HelpCircle } from "lucide-react";
 
 export interface ToxicityBadgeProps {
   hasKnownDdi: boolean | null | undefined;
   unknownRiskApplied?: boolean;
   sideEffectOverlap?: number | null;
   toxicityPenalty?: number | null;
-  size?: 'sm' | 'md' | 'lg';
+  size?: "sm" | "md" | "lg";
   showDetails?: boolean;
   className?: string;
 }
@@ -16,8 +16,8 @@ export interface ToxicityBadgeProps {
  *
  * Implements the backend Phase B1/B2 None-vs-0 invariant:
  * - State 1: has_known_ddi === false (Confirmed Safe / No Known DDI) -> Emerald
- * - State 2: has_known_ddi === true  (Known Adverse DDI Warning)    -> Rose
- * - State 3: has_known_ddi === null / unknown_risk_applied           -> Amber (Unknown Risk / Unindexed)
+ * - State 2: has_known_ddi === true (Known Adverse DDI Warning) -> Rose
+ * - State 3: has_known_ddi === null / unknown_risk_applied -> Amber (Unknown Risk / Unindexed)
  *
  * Nulls are strictly NEVER coerced to false or collapsed into safe.
  */
@@ -26,9 +26,9 @@ export const ToxicityBadge: React.FC<ToxicityBadgeProps> = ({
   unknownRiskApplied = false,
   sideEffectOverlap,
   toxicityPenalty,
-  size = 'md',
+  size = "md",
   showDetails = false,
-  className = '',
+  className = "",
 }) => {
   // Determine state strictly without coercing null/undefined to false
   const isKnownDdi = hasKnownDdi === true;
@@ -38,15 +38,15 @@ export const ToxicityBadge: React.FC<ToxicityBadgeProps> = ({
   const isSafeDdiUnindexedSe = hasKnownDdi === false && unknownRiskApplied;
 
   const sizeClasses = {
-    sm: 'text-[10px] px-2 py-0.5 tracking-wider gap-1',
-    md: 'text-[11px] px-2.5 py-1 tracking-wide gap-1.5',
-    lg: 'text-xs px-3 py-1.5 font-semibold tracking-wide gap-2',
+    sm: "text-[10px] px-2 py-0.5 tracking-wide gap-1",
+    md: "text-[11px] px-2.5 py-1 tracking-wide gap-1.5",
+    lg: "text-xs px-3 py-1.5 font-semibold tracking-wide gap-2",
   };
 
   const iconSizes = {
-    sm: 'w-3 h-3',
-    md: 'w-3.5 h-3.5',
-    lg: 'w-4 h-4',
+    sm: "w-3 h-3",
+    md: "w-3.5 h-3.5",
+    lg: "w-4 h-4",
   };
 
   if (isKnownDdi) {
@@ -54,18 +54,22 @@ export const ToxicityBadge: React.FC<ToxicityBadgeProps> = ({
       <span
         title={`Known adverse drug-drug interaction flagged in PrimeKG DDI network (ddi_risk = 1.0).${
           toxicityPenalty !== undefined && toxicityPenalty !== null
-            ? ` Total tox penalty: ${toxicityPenalty.toFixed(4)}.`
-            : ''
+            ? `Total tox penalty: ${toxicityPenalty.toFixed(4)}.`
+            : ""
         } Flags static database risk; does not model clinical dose scheduling or monitoring.`}
-        className={`inline-flex items-center font-mono uppercase rounded font-semibold bg-[#FEF2F2] text-[#B91C1C] border border-[#FECACA] ${sizeClasses[size]} ${className}`}
+        className={`inline-flex items-center font-mono uppercase rounded font-semibold bg-[#FBEDEF] text-[#B84A5A] border border-[#E8BFC8] ${sizeClasses[size]} ${className}`}
       >
-        <AlertTriangle className={`${iconSizes[size]} text-[#DC2626] shrink-0`} />
+        <AlertTriangle
+          className={`${iconSizes[size]} text-[#C45C6A] shrink-0`}
+        />
         <span>Known Adverse DDI</span>
-        {showDetails && sideEffectOverlap !== undefined && sideEffectOverlap !== null && (
-          <span className="text-[10px] text-[#DC2626]/80 font-normal ml-0.5">
-            ({(sideEffectOverlap * 100).toFixed(0)}% SE)
-          </span>
-        )}
+        {showDetails &&
+          sideEffectOverlap !== undefined &&
+          sideEffectOverlap !== null && (
+            <span className="text-[10px] text-[#C45C6A]/80 font-normal ml-0.5">
+              ({(sideEffectOverlap * 100).toFixed(0)}% SE)
+            </span>
+          )}
       </span>
     );
   }
@@ -75,18 +79,20 @@ export const ToxicityBadge: React.FC<ToxicityBadgeProps> = ({
       <span
         title={`Both compounds indexed in PrimeKG DDI network with zero documented interactions (ddi_risk = 0.0).${
           sideEffectOverlap !== undefined && sideEffectOverlap !== null
-            ? ` SIDER overlap: ${(sideEffectOverlap * 100).toFixed(1)}%`
-            : ''
+            ? `SIDER overlap: ${(sideEffectOverlap * 100).toFixed(1)}%`
+            : ""
         }`}
-        className={`inline-flex items-center font-mono uppercase rounded font-semibold bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0] ${sizeClasses[size]} ${className}`}
+        className={`inline-flex items-center font-mono uppercase rounded font-semibold bg-[#E6F7F5] text-[#0D9488] border border-[#A5D9D4] ${sizeClasses[size]} ${className}`}
       >
-        <ShieldCheck className={`${iconSizes[size]} text-[#059669] shrink-0`} />
+        <ShieldCheck className={`${iconSizes[size]} text-[#0F9B8F] shrink-0`} />
         <span>Confirmed Safe DDI</span>
-        {showDetails && sideEffectOverlap !== undefined && sideEffectOverlap !== null && (
-          <span className="text-[10px] text-[#059669]/80 font-normal ml-0.5">
-            ({(sideEffectOverlap * 100).toFixed(0)}% SE)
-          </span>
-        )}
+        {showDetails &&
+          sideEffectOverlap !== undefined &&
+          sideEffectOverlap !== null && (
+            <span className="text-[10px] text-[#0F9B8F]/80 font-normal ml-0.5">
+              ({(sideEffectOverlap * 100).toFixed(0)}% SE)
+            </span>
+          )}
       </span>
     );
   }
@@ -95,9 +101,9 @@ export const ToxicityBadge: React.FC<ToxicityBadgeProps> = ({
     return (
       <span
         title="Both compounds have zero documented adverse interaction edges in PrimeKG DDI, but one or both compounds lack phenotypic side-effect records in SIDER 4.1. A conservative baseline uncertainty penalty was applied."
-        className={`inline-flex items-center font-mono uppercase rounded font-semibold bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A] ${sizeClasses[size]} ${className}`}
+        className={`inline-flex items-center font-mono uppercase rounded font-semibold bg-[#FBF6E9] text-[#9A712F] border border-[#E5D4A8] ${sizeClasses[size]} ${className}`}
       >
-        <ShieldCheck className={`${iconSizes[size]} text-[#D97706] shrink-0`} />
+        <ShieldCheck className={`${iconSizes[size]} text-[#B8893D] shrink-0`} />
         <span>Safe DDI &bull; Side-Effect Data Unavailable</span>
       </span>
     );
@@ -107,9 +113,9 @@ export const ToxicityBadge: React.FC<ToxicityBadgeProps> = ({
   return (
     <span
       title="Neither compound has verified interaction records in PrimeKG DDI or phenotypic profiles in SIDER. A conservative baseline uncertainty penalty (0.35 DDI / 0.15 SE) was applied."
-      className={`inline-flex items-center font-mono uppercase rounded font-semibold bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A] ${sizeClasses[size]} ${className}`}
+      className={`inline-flex items-center font-mono uppercase rounded font-semibold bg-[#FBF6E9] text-[#9A712F] border border-[#E5D4A8] ${sizeClasses[size]} ${className}`}
     >
-      <HelpCircle className={`${iconSizes[size]} text-[#D97706] shrink-0`} />
+      <HelpCircle className={`${iconSizes[size]} text-[#B8893D] shrink-0`} />
       <span>Unknown Risk &bull; Data Unavailable</span>
     </span>
   );
