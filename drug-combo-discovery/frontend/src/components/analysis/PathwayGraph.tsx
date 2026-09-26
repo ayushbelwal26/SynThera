@@ -58,25 +58,23 @@ const BiologicalNode = ({ data }: { data: any }) => {
 
   return (
     <div
-      className={`px-3 py-2 rounded-md border shadow-xs min-w-[140px] max-w-[200px] cursor-pointer transition-all hover:ring-2 hover:ring-[#2F6B5E]/40 ${typeStyles.bg} ${typeStyles.border}`}
+      className={`px-2.5 py-1.5 border min-w-[130px] max-w-[190px] cursor-pointer hover:border-[#1A535C] ${typeStyles.bg} ${typeStyles.border}`}
     >
       <Handle
         type="target"
         position={Position.Left}
         className="!bg-[#6B746F]"
       />
-      <div className="flex items-center justify-between mb-1">
-        <span
-          className={`text-[9px] font-mono font-semibold uppercase px-1.5 py-0.5 rounded ${typeStyles.badge}`}
-        >
+      <div className="flex items-center justify-between mb-0.5 gap-1">
+        <span className={`text-[10px] capitalize ${typeStyles.badge} px-1`}>
           {data.nodeType}
         </span>
         {data.isHub && (
-          <span className="text-[9px] font-mono text-[#6B746F]">query hub</span>
+          <span className="text-[10px] text-[#6B746C]">query hub</span>
         )}
       </div>
       <div
-        className={`text-xs font-semibold truncate ${typeStyles.text}`}
+        className={`text-[12px] font-medium truncate ${typeStyles.text}`}
         title={data.label}
       >
         {data.label}
@@ -244,62 +242,54 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
   );
 
   return (
-    <div className="syn-card rounded-lg p-4 mb-4">
+    <div className="p-4">
       {/* Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
           <div className="flex items-center gap-2">
-            <Network className="w-4 h-4 text-[#2F6B5E]" />
-            <h3 className="text-lg font-semibold text-[#1C2421]">
-              Mechanistic Attribution Pathway Map
+            <Network className="w-4 h-4 text-[#1A535C]" />
+            <h3 className="section-title text-[16px]">
+              Attribution pathway map
             </h3>
           </div>
-          <p className="text-xs text-[#7A827C] mt-0.5">
-            Local heterogeneous subgraph isolated by gradient attribution
-            backpropagation ({topEdges.length} top-ranked edges)
+          <p className="meta-text mt-0.5">
+            Local subgraph · {topEdges.length} top edges
           </p>
         </div>
 
-        {/* Legend */}
-        <div className="flex items-center gap-2.5 flex-wrap text-[11px] font-mono">
-          <span className="flex items-center gap-1 text-[#25564B]">
-            <span className="w-2.5 h-2.5 rounded-sm bg-[#D4E5DF] border border-[#2F6B5E]" />
+        <div className="flex items-center gap-3 flex-wrap text-[11px] text-[#6B746C]">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 bg-[#D4E5DF] border border-[#2F6B5E]" />
             Drug
           </span>
-          <span className="flex items-center gap-1 text-[#7A5A28]">
-            <span className="w-2.5 h-2.5 rounded-sm bg-[#F5EFE4] border border-[#B8893D]" />
-            Target/Protein
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 bg-[#F5EFE4] border border-[#B8893D]" />
+            Protein
           </span>
-          <span className="flex items-center gap-1 text-[#6B5B8A]">
-            <span className="w-2.5 h-2.5 rounded-sm bg-[#EDE8F3] border border-[#8B7BA8]" />
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 bg-[#EDE8F3] border border-[#8B7BA8]" />
             Pathway
           </span>
-          <span className="flex items-center gap-1 text-[#2F5E5D]">
-            <span className="w-2.5 h-2.5 rounded-sm bg-[#D4E8E8] border border-[#4A8B8A]" />
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 bg-[#D4E8E8] border border-[#4A8B8A]" />
             Disease
           </span>
           <button
             type="button"
             onClick={() => setShowLabels((prev) => !prev)}
-            className="ml-2 px-2 py-0.5 bg-[#EEEBE5] hover:bg-[#E5E2DC] text-[#3D4742] rounded text-[10px] transition-colors"
+            className="ml-1 text-[11px] text-[#1A535C] underline underline-offset-2 decoration-[#CFC9BC] hover:decoration-[#1A535C]"
           >
-            {showLabels ? "Hide Edge Labels" : "Show Edge Labels"}
+            {showLabels ? "Hide edge labels" : "Show edge labels"}
           </button>
         </div>
       </div>
 
-      {/* Model-Generated Plain English Mechanistic Explanation */}
-      <div className="bg-[#F3F1EC] border-l-4 border-[#2F6B5E] p-3.5 rounded-r mb-4 text-xs">
-        <span className="font-semibold text-[#1C2421] block mb-1">
-          Model-Generated Mechanistic Reasoning:
-        </span>
-        <p className="text-[#3D4742] leading-normal font-medium italic">
-          "{explanationText}"
-        </p>
+      <div className="border-l-2 border-[#1A535C] pl-3 py-2 mb-3 text-[13px]">
+        <span className="bench-label block mb-0.5">Mechanistic reasoning</span>
+        <p className="text-[#4A524C] leading-relaxed">{explanationText}</p>
       </div>
 
-      {/* React Flow Interactive Canvas */}
-      <div className="h-[420px] w-full border border-[#E5E2DC] rounded-md overflow-hidden relative bg-[#F3F1EC]">
+      <div className="h-[420px] w-full border border-[#CFC9BC] overflow-hidden relative bg-[#F0EEE6]">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -317,20 +307,17 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
           <Controls showInteractive={false} />
         </ReactFlow>
 
-        {/* Column Guides Overlay */}
-        <div className="absolute top-2 left-4 pointer-events-none flex gap-[180px] text-[10px] font-mono text-[#8A918C] uppercase tracking-wide opacity-70">
-          <span>1. Compounds</span>
-          <span>2. Targets / Enzymes</span>
-          <span>3. Cellular Pathways</span>
-          <span>4. Indications</span>
+        <div className="absolute top-2 left-4 pointer-events-none flex gap-[180px] text-[10px] text-[#8A918C]">
+          <span>Compounds</span>
+          <span>Targets</span>
+          <span>Pathways</span>
+          <span>Indications</span>
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between text-[11px] text-[#7A827C] font-mono">
-        <span>
-          Click any node or edge to inspect detailed biological metadata
-        </span>
-        <span>Line thickness = Attribution gradient importance score</span>
+      <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[#6B746C]">
+        <span>Click a node or edge to inspect</span>
+        <span>Line thickness = attribution weight</span>
       </div>
     </div>
   );

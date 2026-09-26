@@ -1,6 +1,5 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ArrowLeftRight, Play, ArrowRight, Clock } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useApp } from "../services/AppContext";
 import { predictCombination, searchCombinations } from "../services/api";
 import type { Drug, PredictionResult, SearchResponse } from "../types/api";
@@ -12,28 +11,67 @@ import { DiscoveryMode } from "../components/discover/DiscoveryMode";
 import { WhyNotSection } from "../components/discover/WhyNotSection";
 import { LoadingStages } from "../components/common/LoadingStages";
 import { AlertNotice } from "../components/common/AlertNotice";
-import { Badge } from "../components/common/Badge";
-import { ToxicityBadge } from "../components/common/ToxicityBadge";
+
+function classColor(cls: string): string {
+  if (cls === "synergy") return "#1A535C";
+  if (cls === "antagonism") return "#A84B4B";
+  return "#8B7355";
+}
+
+function DistBar({
+  pSyn,
+  pAdd,
+  pAnt,
+}: {
+  pSyn: number;
+  pAdd: number;
+  pAnt: number;
+}) {
+  const total = pSyn + pAdd + pAnt || 1;
+  return (
+    <div className="w-full max-w-[120px]">
+      <span className="bench-label block mb-1">Distribution</span>
+      <div className="flex h-2 w-full overflow-hidden">
+        <div
+          style={{ width: `${(pSyn / total) * 100}%`, background: "#1A535C" }}
+        />
+        <div
+          style={{ width: `${(pAdd / total) * 100}%`, background: "#C4A882" }}
+        />
+        <div
+          style={{ width: `${(pAnt / total) * 100}%`, background: "#A84B4B" }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export const DiscoverPage: React.FC = () => {
   const navigate = useNavigate();
-  const { drugs, cellLineStatus, setCurrentPrediction, addRecentPrediction } =
-    useApp();
+  const [searchParams] = useSearchParams();
+  const {
+    drugs,
+    cellLineStatus,
+    setCurrentPrediction,
+    addRecentPrediction,
+    recentPredictions,
+    currentPrediction,
+  } = useApp();
 
-  const [activeTab, setActiveTab] = useState<"pair" | "search">("pair");
+  const activeTab =
+    searchParams.get("mode") === "indication" ? "search" : "pair";
 
-  // Pair evaluation state
   const [drugA, setDrugA] = useState<Drug | null>(null);
   const [drugB, setDrugB] = useState<Drug | null>(null);
   const [cellLine, setCellLine] = useState<string>("T98G");
   const [diseaseContext, setDiseaseContext] = useState<string>("");
 
-  // Status & loading
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Discovery search results state
-  const [searchDisease, setSearchDisease] = useState<string>("glioblastoma");
+  const [searchDisease, setSearchDisease] = useState<string>(
+    "non-small cell lung carcinoma",
+  );
   const [searchResults, setSearchResults] = useState<SearchResponse | null>(
     null,
   );
@@ -41,11 +79,15 @@ export const DiscoverPage: React.FC = () => {
     null,
   );
 
-  const handleSwapDrugs = () => {
-    const temp = drugA;
-    setDrugA(drugB);
-    setDrugB(temp);
-  };
+  useEffect(() => {
+    if (cellLineStatus.cellLines.length > 0 && !cellLineStatus.cellLines.includes(cellLine)) {
+      setCellLine(cellLineStatus.cellLines[0]);
+    }
+  }, [cellLineStatus.cellLines, cellLine]);
+
+  useEffect(() => {
+    setErrorMsg(null);
+  }, [activeTab]);
 
   const handleSelectPreset = (preset: BenchmarkPreset) => {
     setDrugA(preset.drugA);
@@ -58,15 +100,11 @@ export const DiscoverPage: React.FC = () => {
   const handleAnalyzePair = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!drugA || !drugB || !cellLine) {
-      setErrorMsg(
-        "Please select both Compound A and Compound B to execute analysis.",
-      );
+      setErrorMsg("Select Drug A, Drug B, and a cell line.");
       return;
     }
     if (drugA.id === drugB.id) {
-      setErrorMsg(
-        "Please select two distinct compounds for combination analysis.",
-      );
+      setErrorMsg("Select two distinct compounds.");
       return;
     }
 
@@ -80,14 +118,11 @@ export const DiscoverPage: React.FC = () => {
         cell_line: cellLine,
         disease: diseaseContext.trim() || undefined,
       });
-
       setCurrentPrediction(result);
       addRecentPrediction(result);
       navigate("/analysis");
     } catch (err: any) {
-      setErrorMsg(
-        err.message || "Analysis service error occurred during prediction.",
-      );
+      setErrorMsg(err.message || "Prediction failed.");
     } finally {
       setIsLoading(false);
     }
@@ -119,17 +154,12 @@ export const DiscoverPage: React.FC = () => {
       });
       setSearchResults(res);
     } catch (err: any) {
-      setErrorMsg(
-        err.message ||
-          "Combination discovery failed. Please verify the indication name.",
-      );
+      setErrorMsg(err.message || "Indication search failed.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // When user clicks "Inspect Analysis" on a search result:
-  // Call /predict to get full faithfulness data, then navigate to /analysis.
   const handleSelectDiscoveredPair = async (
     pair: PredictionResult,
     idx: number,
@@ -145,7 +175,6 @@ export const DiscoverPage: React.FC = () => {
       addRecentPrediction(full);
       navigate("/analysis");
     } catch {
-      // Fall back to search result without faithfulness if /predict fails
       setCurrentPrediction(pair);
       addRecentPrediction(pair);
       navigate("/analysis");
@@ -177,420 +206,327 @@ export const DiscoverPage: React.FC = () => {
     }
   };
 
+  const registerEntries = recentPredictions.length
+    ? recentPredictions
+    : currentPrediction
+      ? [currentPrediction]
+      : [];
+
   return (
-    <div className="space-y-5">
-      {/* Hero & Instrument Purpose */}
-      <div className="border-b border-[#E5E2DC] pb-4">
-        <h2 className="font-editorial text-2xl text-[#1C2421]">
-          Combination Analysis & Discovery
-        </h2>
-        <p className="text-sm text-[#5A635E] mt-1 max-w-3xl leading-normal">
-          Screen multi-drug combinations against heterogeneous knowledge graph
-          topologies. Predict synergy or antagonism with calibrated confidence
-          and extract load-bearing mechanistic pathways.
-        </p>
-      </div>
-
-      {/* Mode Selector Tabs */}
-      <div className="flex border-b border-[#E5E2DC] gap-4 overflow-x-auto">
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab("pair");
-            setErrorMsg(null);
-          }}
-          className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === "pair"
-              ? "border-[#2F6B5E] text-[#2F6B5E]"
-              : "border-transparent text-[#6B746F] hover:text-[#1C2421]"
-          }`}
-        >
-          Compound Pair Analysis (Targeted)
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab("search");
-            setErrorMsg(null);
-          }}
-          className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === "search"
-              ? "border-[#2F6B5E] text-[#2F6B5E]"
-              : "border-transparent text-[#6B746F] hover:text-[#1C2421]"
-          }`}
-        >
-          Unbiased Indication Search (Discovery)
-        </button>
-      </div>
-
+    <div className="space-y-0">
       {errorMsg && (
-        <AlertNotice type="error" title="Analysis Notice">
-          {errorMsg}
-        </AlertNotice>
+        <div className="mb-5">
+          <AlertNotice type="error" title="Notice">
+            {errorMsg}
+          </AlertNotice>
+        </div>
       )}
 
-      {/* Loading Stage View */}
       {isLoading && (
-        <div className="py-6">
+        <div className="py-8">
           <LoadingStages
             title={
               activeTab === "pair"
-                ? "Evaluating Drug Combination"
-                : "Discovering Candidate Combinations"
+                ? "Scoring pair"
+                : "Searching candidate space"
             }
             subtitle={
               activeTab === "pair"
-                ? `Running inference for ${drugA?.name || "Drug A"} × ${drugB?.name || "Drug B"} @ ${cellLine}`
-                : "Traversing PrimeKG indication neighbors and ranking candidate combinations"
+                ? `${drugA?.name || "Drug A"} + ${drugB?.name || "Drug B"} · ${cellLine}`
+                : `Indication neighbors · ${searchDisease}`
             }
           />
         </div>
       )}
 
-      {/* Tab 1: Targeted Pair Evaluation */}
+      {/* ── Bench: Score a pair ── */}
       {!isLoading && activeTab === "pair" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-4">
-            <form
-              onSubmit={handleAnalyzePair}
-              className="syn-card rounded-lg p-6 space-y-5"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-end gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+          <div className="lg:col-span-5 space-y-4">
+            <div>
+              <p className="page-kicker">Pair analysis</p>
+              <h2 className="page-title">Score a pair</h2>
+              <p className="page-lede">
+                Enter two DrugBank compounds, a cell line, and optional disease
+                context. Returns class probabilities, V(pair), and attributed
+                edges.
+              </p>
+            </div>
+
+            <div className="bench-panel space-y-4">
+              <form onSubmit={handleAnalyzePair} className="space-y-4">
                 <DrugSelectInput
-                  label="Compound A"
+                  label="Drug A — DrugBank"
                   selectedDrug={drugA}
                   onSelect={setDrugA}
                   drugs={drugs}
-                  placeholder="Select or search Compound A..."
+                  placeholder="Osimertinib"
                 />
-
-                <div className="flex justify-center pb-1">
-                  <button
-                    type="button"
-                    onClick={handleSwapDrugs}
-                    disabled={!drugA && !drugB}
-                    className="p-2 border border-[#D8D5CE] rounded hover:bg-[#EEEBE5] text-[#6B746F] hover:text-[#1C2421] transition-colors disabled:opacity-40"
-                    title="Swap Compound A and Compound B"
-                  >
-                    <ArrowLeftRight className="w-4 h-4" />
-                  </button>
-                </div>
-
                 <DrugSelectInput
-                  label="Compound B"
+                  label="Drug B — DrugBank"
                   selectedDrug={drugB}
                   onSelect={setDrugB}
                   drugs={drugs}
-                  placeholder="Select or search Compound B..."
+                  placeholder="Crizotinib"
                 />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <CellLineDropdown
                   status={cellLineStatus}
                   selectedCellLine={cellLine}
                   onSelect={setCellLine}
                 />
-
                 <div>
-                  <label className="block text-xs font-semibold text-[#3D4742] uppercase tracking-wide mb-1.5">
-                    Indication Context (Optional)
+                  <label className="bench-label block mb-1">
+                    Disease context (optional)
                   </label>
                   <input
                     type="text"
                     value={diseaseContext}
                     onChange={(e) => setDiseaseContext(e.target.value)}
-                    placeholder="e.g. glioblastoma, breast cancer..."
-                    className="w-full bg-[#FFFEFB] border border-[#D8D5CE] rounded px-3 py-2 text-sm text-[#1C2421] focus:outline-none focus:ring-1 focus:ring-[#2F6B5E]"
+                    placeholder="non-small cell lung carcinoma"
+                    className="bench-input"
                   />
                 </div>
-              </div>
-
-              <div className="pt-2 flex justify-end">
                 <button
                   type="submit"
-                  disabled={!drugA || !drugB || isLoading}
-                  className="px-6 py-2.5 bg-[#2F6B5E] hover:bg-[#25564B] disabled:opacity-50 text-[#FFFEFB] rounded font-semibold text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-colors"
+                  disabled={!drugA || !drugB}
+                  className="bench-btn mt-1"
                 >
-                  <Play className="w-4 h-4 fill-current" />
-                  Run Targeted Inference
+                  Run prediction
                 </button>
-              </div>
-            </form>
-
-            {/* Presets Panel */}
-            <BenchmarkPresets onSelect={handleSelectPreset} />
+              </form>
+            </div>
           </div>
 
-          {/* Model Specification Info Card */}
-          <div className="space-y-4">
-            <div className="syn-card rounded-lg p-4 space-y-3 font-mono text-xs">
-              <h3 className="font-sans font-bold text-sm text-[#1C2421] pb-2 border-b border-[#E5E2DC]">
-                Model Pipeline Specifications
+          <div className="lg:col-span-7">
+            <div className="flex items-baseline justify-between border-b border-[#CFC9BC] pb-2 mb-1">
+              <h3 className="section-title">
+                {registerEntries.length > 0
+                  ? "Record register"
+                  : "Reference pairs"}
               </h3>
-              <div className="space-y-2">
-                <div className="flex justify-between py-1.5 border-b border-[#EEEBE5]">
-                  <span className="text-[#6B746F]">Architecture:</span>
-                  <span className="font-semibold text-[#1C2421]">
-                    HGT (Heterogeneous GNN)
-                  </span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-[#EEEBE5]">
-                  <span className="text-[#6B746F]">Knowledge Base:</span>
-                  <span className="font-semibold text-[#1C2421]">
-                    PrimeKG (Multimodal)
-                  </span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-[#EEEBE5]">
-                  <span className="text-[#6B746F]">Calibration:</span>
-                  <span className="font-semibold text-[#1C2421]">
-                    Temperature Scaling (ECE)
-                  </span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-[#EEEBE5]">
-                  <span className="text-[#6B746F]">Explanation Engine:</span>
-                  <span className="font-semibold text-[#2F6B5E]">
-                    Gradient Edge Saliency
-                  </span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-[#EEEBE5]">
-                  <span className="text-[#6B746F]">Verification:</span>
-                  <span className="font-semibold text-[#3D7A6C]">
-                    Dual Faithfulness Ablation
-                  </span>
-                </div>
-                <div className="flex justify-between py-1.5">
-                  <span className="text-[#6B746F]">Literature Link:</span>
-                  <span className="font-semibold text-[#9A712F]">
-                    NCBI PubMed E-Utilities
-                  </span>
-                </div>
-              </div>
+              <span className="meta-text">
+                {registerEntries.length > 0
+                  ? `${registerEntries.length} ${registerEntries.length === 1 ? "entry" : "entries"}`
+                  : "Load to begin"}
+              </span>
             </div>
 
-            <div className="bg-[#F3F1EC] border border-[#E5E2DC] rounded-lg p-4 text-xs text-[#6B746F] leading-normal">
-              <span className="font-semibold text-[#1C2421] block mb-1">
-                Scientific Integrity Guarantee:
-              </span>
-              Predictions, probabilities, and attribution graphs represent live
-              biocomputational evaluations. No simulated or mock data is
-              generated.
-            </div>
+            {registerEntries.length > 0 ? (
+              <div className="divide-y divide-[#CFC9BC] border-b border-[#CFC9BC]">
+                {registerEntries.map((p, idx) => {
+                  const cls = p.predicted_class || "additive";
+                  const color = classColor(cls);
+                  const pSyn =
+                    p.p_synergy ?? p.ranking?.p_synergy ?? p.score ?? 0;
+                  const v =
+                    p.v_score ?? p.ranking?.v_score ?? p.score ?? 0;
+                  return (
+                    <button
+                      key={`${p.drug_a}_${p.drug_b}_${p.cell_line}_${idx}`}
+                      type="button"
+                      onClick={() => {
+                        setCurrentPrediction(p);
+                        navigate("/analysis");
+                      }}
+                      className="w-full text-left py-3 flex items-stretch gap-3 hover:bg-[#E8EDE0]/35"
+                    >
+                      <div
+                        className="w-0.5 shrink-0 self-stretch"
+                        style={{ background: color }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-serif text-[15px] text-[#1A1F1C]">
+                          {p.drug_a_name} + {p.drug_b_name}
+                        </span>
+                        <span className="block id-text mt-0.5">
+                          {p.drug_a} · {p.drug_b} · {p.cell_line}
+                        </span>
+                        <span
+                          className="inline-block text-[12px] mt-1 capitalize"
+                          style={{ color }}
+                        >
+                          {cls}
+                        </span>
+                      </div>
+                      <div className="shrink-0 text-right space-y-1">
+                        <div>
+                          <span className="bench-label block">P(syn)</span>
+                          <span className="metric-value text-[14px]">
+                            {Number(pSyn).toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="bench-label block">V</span>
+                          <span className="metric-value text-[14px]">
+                            {Number(v).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div>
+                <p className="meta-text py-3">
+                  No scored pairs yet. Load a reference case, or run a
+                  prediction from the form.
+                </p>
+                <BenchmarkPresets onSelect={handleSelectPreset} />
+              </div>
+            )}
+
+            {registerEntries.length > 0 && (
+              <div className="mt-6">
+                <BenchmarkPresets onSelect={handleSelectPreset} />
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Tab 2: Discovery Search Mode */}
+      {/* ── Indication search ── */}
       {!isLoading && activeTab === "search" && (
-        <div className="space-y-4">
-          <div className="syn-card rounded-lg p-6">
+        <div className="space-y-5">
+          <div>
+            <p className="page-kicker">Indication search</p>
+            <h2 className="page-title">Ranked candidates for an indication</h2>
+            <p className="page-lede">
+              Traverse disease neighborhood in PrimeKG, score candidate pairs,
+              and rank by V(pair). Open a row for the Result inspector.
+            </p>
+          </div>
+
+          <div className="bench-panel">
             <DiscoveryMode
               cellLineStatus={cellLineStatus}
               selectedCellLine={cellLine}
               onSelectCellLine={setCellLine}
               onRunSearch={handleRunSearch}
               isLoading={isLoading}
+              initialDisease={searchDisease}
             />
           </div>
 
-          {/* Discovery Results Table */}
           {searchResults && (
-            <div className="syn-card rounded-lg p-6 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E5E2DC] pb-3 gap-2">
-                <div>
-                  <h3 className="text-lg font-semibold text-[#1C2421]">
-                    Ranked Discovery Results for '{searchResults.disease}'
-                  </h3>
-                  <p className="text-xs text-[#6B746F] font-mono mt-0.5">
-                    Context: {searchResults.cell_line} &bull; Candidate Pool:{" "}
-                    {searchResults.candidate_pool_size} compounds
-                    {searchResults.max_candidates_scored
-                      ? `• Scored: ${searchResults.max_candidates_scored} pairs`
-                      : ""}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {searchResults.search_method && (
-                    <span className="text-xs font-mono text-[#2F6B5E] bg-[#E8F0ED] border border-[#B5CFC6] px-2.5 py-1 rounded font-semibold">
-                      {searchResults.search_method === "mcts"
-                        ? `MCTS (${searchResults.n_simulations ?? 50} simulations, ${searchResults.n_pairs_scored ?? searchResults.max_candidates_scored ?? searchResults.results.length} pairs scored)`
-                        : searchResults.search_method === "beam"
-                          ? `Beam search (width=${searchResults.beam_width ?? 5}, pool=${searchResults.candidate_pool_size}, scored=${searchResults.max_candidates_scored ?? searchResults.results.length})`
-                          : `Greedy search (pool=${searchResults.candidate_pool_size}, scored=${searchResults.max_candidates_scored ?? searchResults.results.length})`}
-                    </span>
-                  )}
-                  {searchResults.truncated && (
-                    <span className="text-xs font-mono text-[#9A712F] bg-[#F7F0E4] border border-[#E5D4A8] px-2.5 py-1 rounded font-semibold flex items-center gap-1">
-                      <span>⚠️</span> Time budget reached (truncated)
-                    </span>
-                  )}
-                  <span className="text-xs font-mono text-[#5A635E] bg-[#EEEBE5] border border-[#E5E2DC] px-2.5 py-1 rounded font-semibold">
-                    Top {searchResults.results.length} Pairs
-                  </span>
-                </div>
+            <div>
+              <div className="flex items-baseline justify-between border-b border-[#CFC9BC] pb-2 mb-0">
+                <span className="bench-label">
+                  {searchResults.results.length} candidate pairs ·{" "}
+                  {searchResults.search_method || "beam"}
+                  {searchResults.truncated ? " · truncated" : ""}
+                </span>
+                <span className="font-mono text-[12px] text-[#6B746C]">
+                  {searchResults.disease} · {searchResults.cell_line}
+                </span>
               </div>
 
-              <div className="divide-y divide-[#E5E2DC]">
-                {searchResults.results.map((pair, idx) => (
-                  <div
-                    key={`${pair.drug_a}_${pair.drug_b}_${idx}`}
-                    className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-[#F3F1EC] px-3 rounded transition-colors"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-xs text-[#8A918C] font-bold">
-                          #{pair.rank ?? idx + 1}
-                        </span>
-                        <h4 className="font-semibold text-sm text-[#1C2421]">
-                          {pair.drug_a_name} × {pair.drug_b_name}
-                        </h4>
-                        <Badge
-                          variant={
-                            pair.predicted_class === "synergy"
-                              ? "synergy"
-                              : pair.predicted_class === "antagonism"
-                                ? "antagonism"
-                                : "additive"
-                          }
-                          size="sm"
-                        >
-                          {pair.predicted_class}
-                        </Badge>
-                        <ToxicityBadge
-                          hasKnownDdi={pair.ranking?.breakdown?.has_known_ddi}
-                          unknownRiskApplied={
-                            pair.ranking?.breakdown?.unknown_risk_applied
-                          }
-                          sideEffectOverlap={
-                            pair.ranking?.breakdown?.side_effect_overlap
-                          }
-                          toxicityPenalty={pair.ranking?.toxicity_penalty}
-                          size="sm"
-                          showDetails={true}
-                        />
-                        {(pair.search_method === "mcts" ||
-                          searchResults?.search_method === "mcts") &&
-                          pair.mcts_visits !== undefined && (
-                            <span
-                              title="Number of MCTS search visits to this pair during tree exploration (algorithmic exploration count, not a biological score)"
-                              className="text-[10px] font-mono text-[#6B746F] bg-[#F3F1EC] border border-[#E5E2DC] px-1.5 py-0.5 rounded"
-                            >
-                              visits: {pair.mcts_visits}
-                            </span>
-                          )}
-                      </div>
-                      <p className="text-xs text-[#5A635E] line-clamp-2 max-w-2xl leading-normal">
-                        {pair.explanation_text}
-                      </p>
-                      <div className="flex items-center gap-2 pt-1">
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[#6B746F] bg-[#EEEBE5] border border-[#E5E2DC] px-2 py-0.5 rounded">
-                          <Clock className="w-3 h-3 text-[#8A918C]" />
-                          Faithfulness ablation not computed during batch search
-                          &bull; Click Inspect for full verification
-                        </span>
-                      </div>
-                    </div>
+              <div className="divide-y divide-[#CFC9BC]">
+                {searchResults.results.map((pair, idx) => {
+                  const rank = pair.rank ?? idx + 1;
+                  const cls = pair.predicted_class || "additive";
+                  const color = classColor(cls);
+                  const pSyn =
+                    pair.p_synergy ?? pair.ranking?.p_synergy ?? pair.score ?? 0;
+                  const pAdd = (pair as any).p_additive ?? 0;
+                  const pAnt = (pair as any).p_antagonism ?? 0;
+                  const v =
+                    pair.v_score ?? pair.ranking?.v_score ?? pair.score ?? 0;
+                  const tox = pair.ranking?.toxicity_penalty;
 
-                    <div className="flex items-center gap-4 shrink-0 font-mono text-xs">
-                      <div className="text-right">
-                        <span className="text-[10px] text-[#6B746F] uppercase block font-sans">
-                          Composite V(pair)
+                  return (
+                    <div
+                      key={`${pair.drug_a}_${pair.drug_b}_${idx}`}
+                      className="py-2.5 flex flex-col md:flex-row md:items-center gap-3"
+                    >
+                      <span className="id-text text-[15px] text-[#A8A294] w-8 shrink-0 leading-none">
+                        {String(rank).padStart(2, "0")}
+                      </span>
+
+                      <div className="flex-1 min-w-0">
+                        <button
+                          type="button"
+                          disabled={inspectingPairIdx !== null}
+                          onClick={() => handleSelectDiscoveredPair(pair, idx)}
+                          className="font-serif text-[15px] text-[#1A1F1C] underline underline-offset-2 decoration-[#CFC9BC] hover:decoration-[#1A535C] text-left"
+                        >
+                          {pair.drug_a_name} + {pair.drug_b_name}
+                        </button>
+                        <span className="block font-mono text-[12px] text-[#6B746C] mt-0.5">
+                          {pair.cell_line} ·{" "}
+                          {pair.search_method ||
+                            searchResults.search_method ||
+                            "beam"}
                         </span>
-                        <span className="font-bold text-sm text-[#2F6B5E]">
-                          {(
-                            pair.v_score ??
-                            pair.ranking?.v_score ??
-                            pair.score
-                          ).toFixed(4)}
-                        </span>
-                        <div className="text-[10px] text-[#6B746F] flex items-center justify-end gap-1.5 mt-0.5 font-mono">
-                          <span>
-                            p(syn):{" "}
-                            <strong className="text-[#3D7A6C]">
-                              {(
-                                pair.p_synergy ??
-                                pair.ranking?.p_synergy ??
-                                pair.score
-                              ).toFixed(4)}
-                            </strong>
-                          </span>
-                          {pair.ranking?.toxicity_penalty !== undefined &&
-                            pair.ranking?.toxicity_penalty !== null && (
-                              <>
-                                <span>&bull;</span>
-                                <span
-                                  title={`Toxicity penalty: ${pair.ranking.toxicity_penalty.toFixed(4)}`}
-                                >
-                                  tox:{" "}
-                                  <strong
-                                    className={
-                                      pair.ranking.toxicity_penalty > 0.4
-                                        ? "text-[#C45C5C]"
-                                        : "text-[#B8893D]"
-                                    }
-                                  >
-                                    {pair.ranking.toxicity_penalty.toFixed(3)}
-                                  </strong>
-                                </span>
-                              </>
-                            )}
-                        </div>
                       </div>
-                      <button
-                        type="button"
-                        disabled={inspectingPairIdx !== null}
-                        onClick={() => handleSelectDiscoveredPair(pair, idx)}
-                        className="px-3.5 py-2 bg-[#EEEBE5] hover:bg-[#2F6B5E] hover:text-[#FFFEFB] disabled:opacity-50 text-[#1C2421] rounded font-semibold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                      >
-                        {inspectingPairIdx === idx ? (
-                          <span className="flex items-center gap-1.5">
-                            <svg
-                              className="animate-spin w-3.5 h-3.5"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                            >
-                              <circle
-                                className="opacity-25"
-                                cx="12"
-                                cy="12"
-                                r="10"
-                                stroke="currentColor"
-                                strokeWidth="4"
-                              />
-                              <path
-                                className="opacity-75"
-                                fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                              />
-                            </svg>
-                            Loading analysis...
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1.5">
-                            Inspect Analysis{" "}
-                            <ArrowRight className="w-3.5 h-3.5" />
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        {tox !== undefined && tox !== null && (
+                          <span className="font-mono text-[13px] text-[#6B746C]">
+                            Tox {Number(tox).toFixed(2)}
                           </span>
                         )}
-                      </button>
+                        <button
+                          type="button"
+                          className="bench-btn-ghost border border-[#CFC9BC] px-2 py-1 font-mono text-[12px] text-[#4A524C] hover:bg-[#1A1F1C] hover:text-[#F5F5ED] hover:border-[#1A1F1C]"
+                          onClick={() =>
+                            document
+                              .getElementById("why-not-section")
+                              ?.scrollIntoView({ behavior: "smooth" })
+                          }
+                        >
+                          Why not?
+                        </button>
+                      </div>
+
+                      <DistBar
+                        pSyn={Number(pSyn)}
+                        pAdd={Number(pAdd) || Math.max(0, 1 - Number(pSyn) - 0.05)}
+                        pAnt={Number(pAnt) || 0.05}
+                      />
+
+                      <div className="shrink-0 text-right min-w-[72px]">
+                        <span className="bench-label block">Class</span>
+                        <span
+                          className="font-mono text-[14px] capitalize"
+                          style={{ color }}
+                        >
+                          {cls}
+                        </span>
+                      </div>
+
+                      <div className="shrink-0 text-right min-w-[56px]">
+                        <span className="bench-label block">V</span>
+                        <span className="font-mono text-[14px] text-[#1A1F1C]">
+                          {Number(v).toFixed(2)}
+                        </span>
+                      </div>
+
+                      {inspectingPairIdx === idx && (
+                        <span className="font-mono text-[12px] text-[#1A535C]">
+                          Loading…
+                        </span>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
 
-          {/* Why Not Drug X Diagnostic Agent */}
-          <WhyNotSection
-            disease={
-              searchResults?.disease ||
-              searchDisease ||
-              diseaseContext ||
-              "glioblastoma"
-            }
-            cellLine={searchResults?.cell_line || cellLine}
-            searchMethod={(searchResults?.search_method as any) || "beam"}
-            onInspectPair={handleInspectWhyNotPair}
-          />
+      <div className="border-t border-[#CFC9BC] pt-6">
+        <WhyNotSection
+          disease={
+            searchResults?.disease ||
+            searchDisease ||
+            diseaseContext ||
+            "glioblastoma"
+          }
+          cellLine={searchResults?.cell_line || cellLine}
+          searchMethod={(searchResults?.search_method as any) || "beam"}
+          onInspectPair={handleInspectWhyNotPair}
+        />
+      </div>
         </div>
       )}
     </div>

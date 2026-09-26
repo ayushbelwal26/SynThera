@@ -1,16 +1,7 @@
 import React, { useState } from "react";
-import {
-  HelpCircle,
-  ArrowRight,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  ExternalLink,
-  Sparkles,
-} from "lucide-react";
+import { ArrowRight, AlertTriangle, ExternalLink } from "lucide-react";
 import { askWhyNot } from "../../services/api";
 import type { WhyNotResponse } from "../../types/api";
-import { Badge } from "../common/Badge";
 
 interface WhyNotSectionProps {
   disease: string;
@@ -47,7 +38,7 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
     } catch (err: any) {
       setErrorMsg(
         err.message ||
-          "Diagnostic query failed. Please verify connection to the backend.",
+          "Diagnostic query failed. Check the backend connection.",
       );
       setResult(null);
     } finally {
@@ -62,221 +53,187 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
   ];
 
   return (
-    <div className="syn-card rounded-lg p-6 space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E2EAF0] pb-3 gap-2">
-        <div className="flex items-center gap-2">
-          <HelpCircle className="w-4 h-4 text-[#0D9488]" />
-          <h3 className="text-base font-semibold text-[#1A2B3C]">
-            Candidate Investigation: "Why Not Drug X?"
-          </h3>
-          <span className="text-[11px] font-mono text-[#0D9488] bg-[#E6F7F5] border border-[#A5D9D4] px-2 py-0.5 rounded font-semibold">
-            Tier 3: Grounded Agent
-          </span>
+    <div id="why-not-section" className="border-t border-[#CFC9BC] pt-6 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
+        <div>
+          <p className="page-kicker">Diagnostic</p>
+          <h3 className="section-title">Why not drug X?</h3>
         </div>
-        <span className="text-xs text-[#6B7C8A] font-mono">
-          Context: {disease} &bull; {cellLine}
+        <span className="id-text">
+          {disease} · {cellLine}
         </span>
       </div>
 
-      <p className="text-xs text-[#5A6B7A] leading-normal">
-        Ask why a named candidate drug was omitted from top hits, filtered by
-        quality rules, or how it compares against the current #1 search hit.
-        Evaluation uses the trained GNN pair-scorer without LLM hallucinations.
+      <p className="page-lede max-w-2xl !mt-0">
+        Ask why a named candidate was omitted from top hits, filtered, or how it
+        compares to the current #1 search hit. Uses the trained GNN pair-scorer.
       </p>
 
-      {/* Query Form */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleAsk();
-        }}
-        className="space-y-3"
-      >
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={query}
-            disabled={isLoading}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="e.g. Why not Temozolomide? or Why not Zinc chloride?"
-            className="flex-1 px-3.5 py-2.5 bg-[#FFFFFF] border border-[#D0DCE6] focus:border-[#0D9488] focus:ring-1 focus:ring-[#0D9488] rounded-md text-sm text-[#1A2B3C] outline-none font-medium"
-          />
-          <button
-            type="submit"
-            disabled={isLoading || !query.trim()}
-            className="px-4 py-2.5 bg-[#0D9488] hover:bg-[#0B7C78] disabled:bg-[#8A9BAA] text-[#FFFFFF] font-semibold text-xs rounded-md shadow-xs transition-colors cursor-pointer shrink-0"
-          >
-            {isLoading ? "Diagnosing..." : "Ask Agent"}
-          </button>
-        </div>
-
-        {/* Quick Suggestion Chips */}
-        <div className="flex items-center gap-1.5 flex-wrap text-xs text-[#6B7C8A]">
-          <span className="text-[11px] font-medium text-[#5A6B7A]">
-            Try asking:
-          </span>
-          {sampleQuestions.map((q) => (
-            <button
-              key={q}
-              type="button"
+      <div className="bench-panel space-y-3">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleAsk();
+          }}
+          className="space-y-2"
+        >
+          <div className="flex gap-2 items-end">
+            <input
+              type="text"
+              value={query}
               disabled={isLoading}
-              onClick={() => {
-                setQuery(q);
-                handleAsk(q);
-              }}
-              className="text-[11px] bg-[#E8F0F5] hover:bg-[#E2EAF0] px-2 py-0.5 rounded text-[#3A4D5C] transition-colors cursor-pointer"
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="e.g. Why not Temozolomide?"
+              className="bench-input flex-1"
+            />
+            <button
+              type="submit"
+              disabled={isLoading || !query.trim()}
+              className="bench-btn shrink-0"
             >
-              {q}
+              {isLoading ? "Diagnosing…" : "Ask"}
             </button>
-          ))}
-        </div>
-      </form>
+          </div>
 
-      {/* Error state */}
+          <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
+            <span className="bench-label">Try</span>
+            {sampleQuestions.map((q) => (
+              <button
+                key={q}
+                type="button"
+                disabled={isLoading}
+                onClick={() => {
+                  setQuery(q);
+                  handleAsk(q);
+                }}
+                className="text-[12px] text-[#1A535C] underline underline-offset-2 decoration-[#CFC9BC] hover:decoration-[#1A535C] cursor-pointer disabled:opacity-50"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </form>
+      </div>
+
       {errorMsg && (
-        <div className="p-3.5 bg-[#FBEDEF] border border-[#E8BFC8] rounded-md text-xs text-[#9A4050] flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-[#C45C6A] shrink-0" />
+        <div className="py-2 border-y border-[#E8C5C5] text-[13px] text-[#A84B4B] flex items-start gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{errorMsg}</span>
         </div>
       )}
 
-      {/* Result Display (Single Latest Q&A) */}
       {result && (
-        <div className="pt-2">
-          {/* Case 1: Unsupported Question Warning */}
+        <div className="border-t border-[#CFC9BC] pt-3 space-y-3">
           {result.error === "unsupported_question" && (
-            <div className="p-4 bg-[#E8F2FA] border border-[#C5D5E5] rounded-md text-xs text-[#2A5A7A] space-y-1.5">
-              <div className="flex items-center gap-2 font-semibold">
-                <AlertTriangle className="w-4 h-4 text-[#B8893D]" />
-                <span>Unsupported Question</span>
-              </div>
-              <p className="leading-normal">
+            <div className="space-y-1.5 text-[13px] text-[#4A524C]">
+              <p className="font-medium text-[#1A1F1C]">Unsupported question</p>
+              <p>
                 {result.hint ||
-                  "Ask why not <drug> for the current disease and cell line."}
+                  "Ask why not &lt;drug&gt; for the current disease and cell line."}
               </p>
-              <div className="text-[11px] text-[#5A7A9A] opacity-90 pt-1">
-                Supported formats:{" "}
-                <code className="bg-[#E8F2FA] px-1 py-0.5 rounded">
-                  Why not &lt;drug&gt;?
-                </code>
-                ,{" "}
-                <code className="bg-[#E8F2FA] px-1 py-0.5 rounded">
-                  Compare &lt;drug A&gt; vs &lt;drug B&gt;
-                </code>
-                , or{" "}
-                <code className="bg-[#E8F2FA] px-1 py-0.5 rounded">
-                  Why is &lt;drug A&gt; ranked below &lt;drug B&gt;?
-                </code>
-              </div>
+              <p className="meta-text">
+                Formats: Why not &lt;drug&gt;? · Compare &lt;A&gt; vs &lt;B&gt; ·
+                Why is &lt;A&gt; ranked below &lt;B&gt;?
+              </p>
             </div>
           )}
 
-          {/* Case 2: Filtered Non-Therapeutic Candidate */}
           {result.status === "filtered" && (
-            <div className="p-4 bg-[#E8F2FA] border border-[#C5D5E5] rounded-md space-y-2.5">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <XCircle className="w-4 h-4 text-[#C45C6A]" />
-                  <span className="font-semibold text-sm text-[#1A2B3C]">
-                    {result.drug_x?.name}{" "}
-                    {result.drug_x?.id ? `(${result.drug_x.id})` : ""}
-                  </span>
-                </div>
-                <span className="text-xs font-mono font-semibold px-2 py-0.5 bg-[#E8F2FA] border border-[#C5D5E5] text-[#2A5A7A] rounded">
-                  Filtered: Non-Therapeutic
+            <div className="space-y-1.5">
+              <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                <span className="font-serif text-[15px] text-[#1A1F1C]">
+                  {result.drug_x?.name}
+                  {result.drug_x?.id ? (
+                    <span className="id-text ml-2">{result.drug_x.id}</span>
+                  ) : null}
                 </span>
+                <span className="meta-text">Filtered · non-therapeutic</span>
               </div>
-              <p className="text-xs text-[#2A5A7A] leading-normal">
+              <p className="text-[13px] text-[#4A524C] leading-relaxed">
                 {result.explanation_text}
               </p>
             </div>
           )}
 
-          {/* Case 3: Unknown Drug / Not in Graph */}
           {result.status === "unknown_drug" && (
-            <div className="p-4 bg-[#EEF5F8] border border-[#E2EAF0] rounded-md space-y-2">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <span className="font-semibold text-sm text-[#1A2B3C]">
-                  Drug: {result.drug_x?.name || "Unknown"}
+            <div className="space-y-1.5">
+              <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                <span className="font-serif text-[15px] text-[#1A1F1C]">
+                  {result.drug_x?.name || "Unknown"}
                 </span>
-                <span className="text-xs font-mono font-semibold px-2 py-0.5 bg-[#E8F0F5] border border-[#D0DCE6] text-[#5A6B7A] rounded">
-                  Not in Knowledge Graph
-                </span>
+                <span className="meta-text">Not in knowledge graph</span>
               </div>
-              <p className="text-xs text-[#5A6B7A] leading-normal">
+              <p className="text-[13px] text-[#4A524C] leading-relaxed">
                 {result.explanation_text}
               </p>
             </div>
           )}
 
-          {/* Case 4: Scored Diagnostic Result */}
           {result.status === "scored" && (
-            <div className="bg-[#EEF5F8] border border-[#E2EAF0] rounded-md p-4 space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-2 border-b border-[#E2EAF0] pb-2.5">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#0D9488]" />
-                  <span className="font-semibold text-sm text-[#1A2B3C]">
-                    Diagnostic Assessment for {result.drug_x?.name}{" "}
-                    {result.drug_x?.id ? `(${result.drug_x.id})` : ""}
-                  </span>
-                </div>
-                <Badge
-                  variant={
-                    result.verdict === "competitive" ? "synergy" : "additive"
-                  }
-                  size="sm"
+            <div className="space-y-4">
+              <div className="flex items-baseline justify-between gap-2 flex-wrap border-b border-[#CFC9BC] pb-2">
+                <span className="font-serif text-[15px] text-[#1A1F1C]">
+                  {result.drug_x?.name}
+                  {result.drug_x?.id ? (
+                    <span className="id-text ml-2">{result.drug_x.id}</span>
+                  ) : null}
+                </span>
+                <span
+                  className={`text-[12px] font-medium capitalize ${
+                    result.verdict === "competitive"
+                      ? "text-[#1A535C]"
+                      : "text-[#8B7355]"
+                  }`}
                 >
                   {result.verdict === "competitive"
-                    ? "Competitive Candidate"
-                    : "Lower Predicted Synergy"}
-                </Badge>
+                    ? "Competitive candidate"
+                    : "Lower predicted synergy"}
+                </span>
               </div>
 
-              <p className="text-xs text-[#3A4D5C] leading-normal bg-[#FFFFFF] p-3 rounded border border-[#E2EAF0]">
+              <p className="text-[13px] text-[#4A524C] leading-relaxed">
                 {result.explanation_text}
               </p>
 
-              {/* Pair comparison metrics */}
               {result.best_pair && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono text-xs">
-                  <div className="bg-[#FFFFFF] border border-[#E2EAF0] p-3 rounded space-y-1">
-                    <span className="text-[10px] text-[#6B7C8A] uppercase block">
-                      Best Evaluated Pairing in Pool
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-[#CFC9BC] border-y border-[#CFC9BC]">
+                  <div className="py-2.5 sm:pr-4 space-y-1">
+                    <span className="bench-label block">
+                      Best pairing in pool
                     </span>
-                    <div className="font-semibold text-[#1A2B3C] text-sm">
+                    <div className="font-serif text-[14px] text-[#1A1F1C]">
                       {result.best_pair.drug_a_name} ×{" "}
                       {result.best_pair.drug_b_name}
                     </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      <span className="text-xs font-bold text-[#0D9488]">
-                        p_syn: {result.best_pair.p_synergy.toFixed(4)}
+                    <div className="flex items-baseline gap-2">
+                      <span className="metric-value text-[14px]">
+                        {result.best_pair.p_synergy.toFixed(4)}
                       </span>
-                      <Badge variant="synergy" size="sm">
-                        {result.best_pair.predicted_class}
-                      </Badge>
+                      <span className="meta-text">
+                        p_syn · {result.best_pair.predicted_class}
+                      </span>
                     </div>
                   </div>
 
                   {result.reference_top && (
-                    <div className="bg-[#FFFFFF] border border-[#E2EAF0] p-3 rounded space-y-1">
-                      <span className="text-[10px] text-[#6B7C8A] uppercase block">
-                        Search #1 Baseline Reference
+                    <div className="py-2.5 sm:pl-4 space-y-1">
+                      <span className="bench-label block">
+                        Search #1 reference
                       </span>
-                      <div className="font-semibold text-[#1A2B3C] text-sm">
+                      <div className="font-serif text-[14px] text-[#1A1F1C]">
                         {result.reference_top.drug_a_name} ×{" "}
                         {result.reference_top.drug_b_name}
                       </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <span className="text-xs font-bold text-[#0F9B8F]">
-                          p_syn: {result.reference_top.p_synergy.toFixed(4)}
+                      <div className="flex items-baseline gap-2">
+                        <span className="metric-value text-[14px]">
+                          {result.reference_top.p_synergy.toFixed(4)}
                         </span>
-                        <span className="text-[11px] text-[#6B7C8A]">
-                          (Δ:{" "}
+                        <span className="meta-text">
+                          p_syn · Δ{" "}
                           {(
                             result.best_pair.p_synergy -
                             result.reference_top.p_synergy
                           ).toFixed(4)}
-                          )
                         </span>
                       </div>
                     </div>
@@ -284,42 +241,37 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
                 </div>
               )}
 
-              {/* Single Literature Citation Grounding */}
               {result.literature?.citations &&
                 result.literature.citations.length > 0 && (
-                  <div className="bg-[#FFFFFF] border border-[#E2EAF0] p-3 rounded space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[#1A2B3C] flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-[#0D9488]" />
-                        PubMed Literature Grounding (1 Retrieved Study)
-                      </span>
+                  <div className="space-y-1.5 border-t border-[#CFC9BC] pt-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="bench-label">PubMed grounding</span>
                       <a
                         href={result.literature.citations[0].url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[#0D9488] hover:underline flex items-center gap-1 font-mono text-[11px]"
+                        className="id-text text-[#1A535C] hover:underline inline-flex items-center gap-1"
                       >
-                        PMID {result.literature.citations[0].pmid}{" "}
+                        PMID {result.literature.citations[0].pmid}
                         <ExternalLink className="w-3 h-3" />
                       </a>
                     </div>
-                    <div className="font-medium text-[#EEF5F8]">
-                      "{result.literature.citations[0].title}" (
-                      {result.literature.citations[0].year}) &bull;{" "}
+                    <p className="font-serif text-[14px] text-[#1A1F1C] leading-snug">
+                      {result.literature.citations[0].title} (
+                      {result.literature.citations[0].year}) ·{" "}
                       {result.literature.citations[0].first_author} et al.
-                    </div>
+                    </p>
                     {result.literature.citations[0].snippet && (
-                      <p className="text-[11px] text-[#6B7C8A] italic leading-normal">
-                        "{result.literature.citations[0].snippet}"
+                      <p className="meta-text italic leading-relaxed">
+                        “{result.literature.citations[0].snippet}”
                       </p>
                     )}
-                    <span className="inline-block text-[10px] font-mono text-[#0B7C78] bg-[#E6F7F5] px-1.5 py-0.5 rounded border border-[#CDEEEA]">
+                    <span className="meta-text">
                       {result.literature.citations[0].match_reason}
                     </span>
                   </div>
                 )}
 
-              {/* Action: Inspect this pair */}
               {result.best_pair && (
                 <div className="flex justify-end pt-1">
                   <button
@@ -331,12 +283,10 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
                         result.best_pair!.cell_line,
                       )
                     }
-                    className="px-4 py-2 bg-[#0D9488] hover:bg-[#0B7C78] text-[#FFFFFF] rounded text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                    className="bench-btn"
                   >
-                    <span>
-                      Inspect {result.best_pair.drug_a_name} ×{" "}
-                      {result.best_pair.drug_b_name} (Faithfulness + Pathway)
-                    </span>
+                    Inspect {result.best_pair.drug_a_name} ×{" "}
+                    {result.best_pair.drug_b_name}
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>

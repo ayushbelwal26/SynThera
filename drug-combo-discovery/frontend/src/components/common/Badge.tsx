@@ -20,39 +20,34 @@ export const Badge: React.FC<BadgeProps> = ({
   className = "",
 }) => {
   const sizeClasses = {
-    sm: "text-[11px] px-2 py-0.5 tracking-wide",
-    md: "text-xs px-2.5 py-1 tracking-wide",
-    lg: "text-sm px-3.5 py-1.5 font-semibold tracking-wide",
+    sm: "text-[11px]",
+    md: "text-[12px]",
+    lg: "text-[13px]",
   };
 
-  const variantClasses = {
-    synergy: "bg-[#E8F0ED] text-[#2F6B5E] border border-[#B5CFC6]",
-    antagonism: "bg-[#F7EBEB] text-[#A84B4B] border border-[#E8C5C5]",
-    additive: "bg-[#F7F0E4] text-[#9A712F] border border-[#E5D4A8]",
-    neutral: "bg-[#EEEBE5] text-[#5A635E] border border-[#E5E2DC]",
-    accent: "bg-[#E8F0ED] text-[#25564B] border border-[#B5CFC6]",
-    literature: "bg-[#F5EFE4] text-[#7A5A28] border border-[#E5D4A8]",
+  const colorClasses = {
+    synergy: "text-[#1A535C]",
+    antagonism: "text-[#A84B4B]",
+    additive: "text-[#8B7355]",
+    neutral: "text-[#6B746C]",
+    accent: "text-[#1A535C]",
+    literature: "text-[#6B5A3A]",
+  };
+
+  const dotClasses = {
+    synergy: "bg-[#1A535C]",
+    antagonism: "bg-[#A84B4B]",
+    additive: "bg-[#8B7355]",
+    neutral: "bg-[#6B746C]",
+    accent: "bg-[#1A535C]",
+    literature: "bg-[#6B5A3A]",
   };
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 font-mono uppercase rounded font-medium ${sizeClasses[size]} ${variantClasses[variant]} ${className}`}
+      className={`inline-flex items-center gap-1.5 font-sans font-medium capitalize ${sizeClasses[size]} ${colorClasses[variant]} ${className}`}
     >
-      <span
-        className={`w-1.5 h-1.5 rounded-full ${
-          variant === "synergy"
-            ? "bg-[#3D7A6C]"
-            : variant === "antagonism"
-              ? "bg-[#C45C5C]"
-              : variant === "additive"
-                ? "bg-[#B8893D]"
-                : variant === "literature"
-                  ? "bg-[#9A712F]"
-                  : variant === "accent"
-                    ? "bg-[#2F6B5E]"
-                    : "bg-[#6B746F]"
-        }`}
-      />
+      <span className={`w-1.5 h-1.5 shrink-0 ${dotClasses[variant]}`} />
       {children}
     </span>
   );

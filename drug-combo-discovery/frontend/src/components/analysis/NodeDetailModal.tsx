@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { X, Dna, ArrowRight } from "lucide-react";
+import { X } from "lucide-react";
 
 interface NodeDetailModalProps {
   entity: { type: "node" | "edge"; data: any } | null;
@@ -24,48 +24,39 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
   const data = entity.data;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A2B3C]/40 backdrop-blur-xs p-4">
-      <div className="bg-[#FFFFFF] border border-[#D0DCE6] rounded-lg shadow-xl max-w-md w-full p-4 relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2421]/35 p-4">
+      <div className="bg-[#F5F5ED] border border-[#CFC9BC] max-w-md w-full p-4 relative">
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 text-[#6B7C8A] hover:text-[#1A2B3C] p-1 rounded hover:bg-[#E8F0F5] transition-colors"
+          className="absolute top-3 right-3 text-[#6B746F] hover:text-[#1C2421] p-1"
         >
           <X className="w-4 h-4" />
         </button>
 
-        <div className="flex items-center gap-2 mb-3">
-          <Dna className="w-4 h-4 text-[#0D9488]" />
-          <span className="text-[11px] font-mono uppercase tracking-wide text-[#6B7C8A]">
-            {isNode
-              ? `Entity Inspector: ${data.nodeType || "Node"}`
-              : "Interaction Edge Inspector"}
-          </span>
-        </div>
+        <p className="page-kicker mb-1">
+          {isNode
+            ? `Entity · ${data.nodeType || "Node"}`
+            : "Edge inspector"}
+        </p>
 
         {isNode ? (
           <div>
-            <h3 className="text-xl font-semibold text-[#1A2B3C] mb-2">
-              {data.label}
-            </h3>
-            <div className="bg-[#EEF5F8] border border-[#E2EAF0] rounded p-3 text-xs space-y-2 font-mono">
-              <div className="flex justify-between">
-                <span className="text-[#6B7C8A]">Biological Role:</span>
-                <span className="font-semibold text-[#1A2B3C] uppercase">
-                  {data.nodeType}
+            <h3 className="section-title mb-3">{data.label}</h3>
+            <div className="border-t border-[#CFC9BC] divide-y divide-[#CFC9BC] text-[13px]">
+              <div className="flex justify-between py-2">
+                <span className="meta-text">Role</span>
+                <span className="text-[#1C2421] capitalize">{data.nodeType}</span>
+              </div>
+              <div className="flex justify-between py-2">
+                <span className="meta-text">Query status</span>
+                <span className="text-[#1C2421]">
+                  {data.isHub ? "Query hub" : "Attribution neighbor"}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#6B7C8A]">Query Status:</span>
-                <span className="text-[#1A2B3C]">
-                  {data.isHub
-                    ? "Combination Query Hub"
-                    : "Attribution Neighbor"}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#6B7C8A]">PrimeKG Node Type:</span>
-                <span className="text-[#1A2B3C]">
+              <div className="flex justify-between py-2">
+                <span className="meta-text">PrimeKG type</span>
+                <span className="id-text text-[#1C2421]">
                   {data.nodeType === "drug"
                     ? "drug"
                     : data.nodeType === "protein"
@@ -74,59 +65,44 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
                 </span>
               </div>
             </div>
-            <p className="text-xs text-[#5A6B7A] mt-3 leading-normal">
-              This entity was identified as an active participant in the GNN
-              explanation subgraph, mediating target-disease or protein-protein
-              network connectivity.
+            <p className="meta-text mt-3 leading-relaxed">
+              Participant in the explanation subgraph mediating
+              target–disease or protein–protein connectivity.
             </p>
           </div>
         ) : (
           <div>
-            <div className="flex items-center gap-2 font-semibold text-sm text-[#1A2B3C] mb-3">
-              <span className="bg-[#E8F0F5] px-2 py-0.5 rounded border border-[#E2EAF0]">
-                {data.source}
+            <h3 className="section-title mb-3 flex items-center gap-2 flex-wrap">
+              <span>{data.source}</span>
+              <span className="meta-text font-sans font-normal italic">
+                {data.relation}
               </span>
-              <ArrowRight className="w-3.5 h-3.5 text-[#6B7C8A]" />
-              <span className="bg-[#E8F0F5] px-2 py-0.5 rounded border border-[#E2EAF0]">
-                {data.target}
-              </span>
-            </div>
-
-            <div className="bg-[#EEF5F8] border border-[#E2EAF0] rounded p-3 text-xs space-y-2 font-mono">
-              <div className="flex justify-between">
-                <span className="text-[#6B7C8A]">Relation:</span>
-                <span className="font-semibold text-[#0D9488]">
-                  {data.relation}
+              <span>{data.target}</span>
+            </h3>
+            <div className="border-t border-[#CFC9BC] divide-y divide-[#CFC9BC] text-[13px]">
+              <div className="flex justify-between py-2">
+                <span className="meta-text">Importance</span>
+                <span className="metric-value text-[14px]">
+                  {typeof data.importance === "number"
+                    ? data.importance.toFixed(4)
+                    : data.importance}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#6B7C8A]">Importance Score:</span>
-                <span className="font-bold text-[#1A2B3C]">
-                  {Number(data.importance).toFixed(6)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#6B7C8A]">Edge Attribution:</span>
-                <span className="text-[#0F9B8F]">||grad_src p(class)||_2</span>
-              </div>
+              {data.source_type && (
+                <div className="flex justify-between py-2">
+                  <span className="meta-text">Source type</span>
+                  <span className="capitalize">{data.source_type}</span>
+                </div>
+              )}
+              {data.target_type && (
+                <div className="flex justify-between py-2">
+                  <span className="meta-text">Target type</span>
+                  <span className="capitalize">{data.target_type}</span>
+                </div>
+              )}
             </div>
-            <p className="text-xs text-[#5A6B7A] mt-3 leading-normal">
-              Gradient attribution quantifies how sensitively the predicted
-              interaction probability changes with respect to this edge's source
-              node embeddings.
-            </p>
           </div>
         )}
-
-        <div className="mt-5 pt-3 border-t border-[#E2EAF0] flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 bg-[#E8F0F5] hover:bg-[#E2EAF0] text-[#1A2B3C] rounded text-xs font-medium transition-colors"
-          >
-            Close Inspector
-          </button>
-        </div>
       </div>
     </div>
   );

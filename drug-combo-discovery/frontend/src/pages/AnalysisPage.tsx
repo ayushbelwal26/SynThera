@@ -1,18 +1,49 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Compass, Activity, History } from "lucide-react";
 import { useApp } from "../services/AppContext";
 import { PredictionHeader } from "../components/analysis/PredictionHeader";
 import { ProbabilityVector } from "../components/analysis/ProbabilityVector";
-import { ToxicityCard } from "../components/analysis/ToxicityCard";
+import { GraphEvidenceTable } from "../components/analysis/GraphEvidenceTable";
 import { PathwayGraph } from "../components/analysis/PathwayGraph";
 import { NodeDetailModal } from "../components/analysis/NodeDetailModal";
 import { FaithfulnessCard } from "../components/analysis/FaithfulnessCard";
 import { LiteratureSection } from "../components/analysis/LiteratureSection";
 import { AnalysisChatPanel } from "../components/analysis/AnalysisChatPanel";
+import { ToxicityCard } from "../components/analysis/ToxicityCard";
 import { BENCHMARKS } from "../components/discover/BenchmarkPresets";
 import { predictCombination } from "../services/api";
 import { LoadingStages } from "../components/common/LoadingStages";
+
+function Section({
+  num,
+  title,
+  blurb,
+  children,
+  emphasis = false,
+}: {
+  num: string;
+  title: string;
+  blurb: string;
+  children: React.ReactNode;
+  emphasis?: boolean;
+}) {
+  return (
+    <section
+      className={`bench-section grid grid-cols-1 lg:grid-cols-12 gap-5 ${
+        emphasis ? "pt-6 pb-6" : ""
+      }`}
+    >
+      <div className="lg:col-span-3">
+        <span className="meta-text">{num}</span>
+        <h3 className="section-title mt-0.5">{title}</h3>
+        <p className="mt-1.5 text-[12px] text-[#6B746C] leading-snug max-w-[16rem]">
+          {blurb}
+        </p>
+      </div>
+      <div className="lg:col-span-9">{children}</div>
+    </section>
+  );
+}
 
 export const AnalysisPage: React.FC = () => {
   const navigate = useNavigate();
@@ -29,6 +60,7 @@ export const AnalysisPage: React.FC = () => {
   const [isLoadingBenchmark, setIsLoadingBenchmark] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatWidth, setChatWidth] = useState(380);
+  const [showGraphViz, setShowGraphViz] = useState(false);
 
   const handleQuickLoadBenchmark = async (index: number) => {
     const preset = BENCHMARKS[index];
@@ -52,8 +84,8 @@ export const AnalysisPage: React.FC = () => {
     return (
       <div className="py-8">
         <LoadingStages
-          title="Loading Benchmark Combination"
-          subtitle="Querying model checkpoint and PrimeKG attribution pathway"
+          title="Loading reference pair"
+          subtitle="Checkpoint inference and PrimeKG attribution"
         />
       </div>
     );
@@ -61,47 +93,33 @@ export const AnalysisPage: React.FC = () => {
 
   if (!currentPrediction) {
     return (
-      <div className="max-w-2xl mx-auto py-8 text-center">
-        <div className="w-14 h-14 rounded-full bg-[#EEEBE5] border border-[#E5E2DC] flex items-center justify-center mx-auto mb-4 text-[#6B746F]">
-          <Activity className="w-6 h-6" />
-        </div>
-        <h3 className="text-2xl font-semibold text-[#1C2421] mb-2">
-          Select two compounds to begin analysis.
-        </h3>
-        <p className="text-sm text-[#6B746F] mb-4 max-w-lg mx-auto leading-normal">
-          No prediction result is currently active. Configure a drug pair in
-          Discover or load a benchmark below.
+      <div className="max-w-xl py-6">
+        <p className="page-kicker">Result inspector</p>
+        <h2 className="page-title">No active pair record</h2>
+        <p className="page-lede mb-4">
+          Score a pair on the Bench, or load a reference case below.
         </p>
-
-        <div className="flex justify-center gap-3 mb-5">
-          <button
-            type="button"
-            onClick={() => navigate("/discover")}
-            className="px-4 py-2.5 bg-[#2F6B5E] hover:bg-[#25564B] text-[#FFFEFB] rounded-md font-semibold text-xs flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <Compass className="w-4 h-4" />
-            Open Discover
-          </button>
-        </div>
-
-        <div className="border-t border-[#E5E2DC] pt-4 text-left">
-          <span className="text-xs font-semibold text-[#5A635E] uppercase tracking-wide block mb-3">
-            Quick-load reference case
-          </span>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        <button
+          type="button"
+          onClick={() => navigate("/discover")}
+          className="bench-btn mb-5"
+        >
+          Open bench
+        </button>
+        <div className="border-t border-[#CFC9BC] pt-3">
+          <span className="bench-label block mb-2">Quick-load reference</span>
+          <div className="divide-y divide-[#CFC9BC] border-y border-[#CFC9BC]">
             {BENCHMARKS.map((bm, idx) => (
               <button
                 key={bm.id}
                 type="button"
                 onClick={() => handleQuickLoadBenchmark(idx)}
-                className="p-3 bg-[#FFFEFB] border border-[#D8D5CE] hover:border-[#2F6B5E] rounded-md text-left transition-all group"
+                className="w-full text-left py-2 flex justify-between gap-3 hover:bg-[#E8EDE0]/40"
               >
-                <span className="font-semibold text-xs text-[#1C2421] group-hover:text-[#2F6B5E] block">
-                  {bm.name}
+                <span className="font-serif text-[14px]">
+                  {bm.drugA.name} + {bm.drugB.name}
                 </span>
-                <span className="font-mono text-[10px] text-[#6B746F] mt-1 block">
-                  {bm.cellLine} · {bm.expectedClass}
-                </span>
+                <span className="id-text">{bm.cellLine}</span>
               </button>
             ))}
           </div>
@@ -111,70 +129,129 @@ export const AnalysisPage: React.FC = () => {
   }
 
   return (
-    <div className="flex items-start gap-0 -mx-4 sm:-mx-6 min-h-[calc(100vh-10rem)]">
-      {/* Main analysis column — shrinks when chat is open */}
-      <div className="flex-1 min-w-0 px-4 sm:px-6 space-y-4 pb-5 transition-[max-width] duration-200">
+    <div className="flex items-start gap-0 min-h-[calc(100vh-8rem)]">
+      <div className="flex-1 min-w-0 space-y-0 pb-10">
         <PredictionHeader prediction={currentPrediction} />
 
-        <ProbabilityVector prediction={currentPrediction} />
-        <ToxicityCard prediction={currentPrediction} />
-        <PathwayGraph
-          topEdges={currentPrediction.top_edges}
-          drugAName={currentPrediction.drug_a_name}
-          drugBName={currentPrediction.drug_b_name}
-          explanationText={currentPrediction.explanation_text}
-          onSelectEntity={setSelectedEntity}
-        />
-        <FaithfulnessCard prediction={currentPrediction} />
-        <LiteratureSection
-          citations={currentPrediction.supporting_literature}
-          literature={currentPrediction.literature}
-          drugAName={currentPrediction.drug_a_name}
-          drugBName={currentPrediction.drug_b_name}
-        />
+        <Section
+          num="3.1"
+          title="Prediction"
+          blurb="Calibrated class probabilities and multi-objective V(pair)."
+          emphasis
+        >
+          <ProbabilityVector prediction={currentPrediction} />
+        </Section>
 
-        <NodeDetailModal
-          entity={selectedEntity}
-          onClose={() => setSelectedEntity(null)}
-        />
+        <Section
+          num="3.2"
+          title="Graph evidence"
+          blurb="Attributed PrimeKG edges driving the prediction, ranked by saliency."
+        >
+          <GraphEvidenceTable
+            edges={currentPrediction.top_edges || []}
+            explanationText={currentPrediction.explanation_text}
+          />
+          <button
+            type="button"
+            onClick={() => setShowGraphViz((v) => !v)}
+            className="mt-3 text-[12px] text-[#6B746C] hover:text-[#1A535C]"
+          >
+            {showGraphViz ? "Hide graph view" : "Show interactive graph"}
+          </button>
+          {showGraphViz && (
+            <div className="mt-4 bench-panel-flush overflow-hidden">
+              <PathwayGraph
+                topEdges={currentPrediction.top_edges}
+                drugAName={currentPrediction.drug_a_name}
+                drugBName={currentPrediction.drug_b_name}
+                explanationText={currentPrediction.explanation_text}
+                onSelectEntity={setSelectedEntity}
+              />
+            </div>
+          )}
+        </Section>
+
+        <Section
+          num="3.3"
+          title="Faithfulness"
+          blurb="Sufficiency and necessity via in-silico edge ablation."
+        >
+          <FaithfulnessCard prediction={currentPrediction} />
+        </Section>
+
+        {currentPrediction.ranking && (
+          <Section
+            num="3.3b"
+            title="Toxicity & ranking"
+            blurb="DDI, side-effect overlap, and composite value function terms."
+          >
+            <ToxicityCard prediction={currentPrediction} />
+          </Section>
+        )}
+
+        <Section
+          num="3.4"
+          title="Literature"
+          blurb="PubMed records matched to retained edges and pair context."
+        >
+          <LiteratureSection
+            citations={currentPrediction.supporting_literature}
+            literature={currentPrediction.literature}
+            drugAName={currentPrediction.drug_a_name}
+            drugBName={currentPrediction.drug_b_name}
+          />
+        </Section>
+
+        <Section
+          num="3.5"
+          title="Ask this record"
+          blurb="Natural-language questions grounded in this prediction."
+        >
+          <button
+            type="button"
+            onClick={() => setChatOpen(true)}
+            className="w-full flex items-center justify-between border border-[#CFC9BC] bg-[#FFFEF8] px-4 py-3 group hover:border-[#1A535C]"
+          >
+            <span className="text-[13px] text-[#4A524C] group-hover:text-[#1A1F1C]">
+              Ask about mechanism, literature, or ranking for this pair
+            </span>
+            <span className="bench-btn !py-1.5 !px-3 text-[12px]">Ask</span>
+          </button>
+        </Section>
 
         {recentPredictions.length > 1 && (
-          <div className="syn-card rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <History className="w-4 h-4 text-[#6B746F]" />
-              <h4 className="text-xs font-semibold text-[#1C2421] uppercase tracking-wide">
-                Recent evaluations ({recentPredictions.length})
-              </h4>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          <section className="bench-section">
+            <span className="bench-label block mb-3">
+              Recent records · {recentPredictions.length}
+            </span>
+            <div className="divide-y divide-[#CFC9BC] border-y border-[#CFC9BC]">
               {recentPredictions.map((p, idx) => (
                 <button
                   key={`${p.drug_a}_${p.drug_b}_${p.cell_line}_${idx}`}
                   type="button"
                   onClick={() => setCurrentPrediction(p)}
-                  className={`p-2.5 rounded border text-left transition-all ${
-                    p === currentPrediction
-                      ? "bg-[#E8F0ED] border-[#2F6B5E]"
-                      : "bg-[#F3F1EC] border-[#E5E2DC] hover:border-[#D8D5CE]"
+                  className={`w-full text-left py-2.5 flex justify-between gap-3 ${
+                    p === currentPrediction ? "bg-[#E8EDE0]/50" : ""
                   }`}
                 >
-                  <div className="font-semibold text-xs text-[#1C2421] truncate">
-                    {p.drug_a_name} × {p.drug_b_name}
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] font-mono text-[#6B746F] mt-1">
-                    <span>{p.cell_line}</span>
-                    <span className="uppercase font-bold text-[#2F6B5E]">
-                      {p.predicted_class}
-                    </span>
-                  </div>
+                  <span className="font-serif text-[14px]">
+                    {p.drug_a_name} + {p.drug_b_name}
+                  </span>
+                  <span className="font-mono text-[10px] text-[#6B746C]">
+                    {p.predicted_class}
+                  </span>
                 </button>
               ))}
             </div>
-          </div>
+          </section>
         )}
+
+        <NodeDetailModal
+          entity={selectedEntity}
+          onClose={() => setSelectedEntity(null)}
+        />
       </div>
 
-      {/* Cursor-style right assistant panel — content reflows beside it */}
       <AnalysisChatPanel
         prediction={currentPrediction}
         isOpen={chatOpen}

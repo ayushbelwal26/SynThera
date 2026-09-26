@@ -13,16 +13,16 @@ export interface HealthResponse {
 }
 
 export interface Drug {
-  id: string;   // DrugBank ID e.g. "DB00853"
+  id: string; // DrugBank ID e.g. "DB00853"
   name: string; // Generic name e.g. "Temozolomide"
 }
 
 export interface ExplanationEdge {
   source: string;
-  source_type?: 'drug' | 'protein' | 'disease' | 'pathway' | string;
+  source_type?: "drug" | "protein" | "disease" | "pathway" | string;
   relation: string;
   target: string;
-  target_type?: 'drug' | 'protein' | 'disease' | 'pathway' | string;
+  target_type?: "drug" | "protein" | "disease" | "pathway" | string;
   importance: number;
   [key: string]: unknown;
 }
@@ -36,7 +36,8 @@ export interface LiteratureCitation {
   snippet?: string;
   url: string;
   match_reason?: string;
-  evidence_type?: 'combination' | 'single_drug' | 'mechanistic_context' | string;
+  evidence_type?:
+    "combination" | "single_drug" | "mechanistic_context" | string;
   relation_context?: string;
   summary?: string;
 }
@@ -91,7 +92,7 @@ export interface ToxicityBreakdown {
 
 export interface RankingBlock {
   v_score: number;
-  score: number;             // same as v_score, kept for back-compat
+  score: number; // same as v_score, kept for back-compat
   p_synergy: number;
   toxicity_penalty: number;
   redundancy_penalty: number | null;
@@ -105,8 +106,8 @@ export interface PredictionResult {
   drug_b: string;
   drug_b_name: string;
   cell_line: string;
-  predicted_class: 'synergy' | 'additive' | 'antagonism' | string;
-  score: number;             // calibrated p_synergy or composite v_score depending on search/predict
+  predicted_class: "synergy" | "additive" | "antagonism" | string;
+  score: number; // calibrated p_synergy or composite v_score depending on search/predict
   p_antagonism: number;
   p_additive: number;
   p_synergy: number;
@@ -114,14 +115,14 @@ export interface PredictionResult {
   explanation_text: string;
   supporting_literature: LiteratureCitation[];
   literature?: LiteratureResult | null;
-  
+
   // Real faithfulness metrics (measured via in-silico ablation on the GNN)
   faithfulness?: FaithfulnessResult | null;
-  necessity_delta_pct?: number;        // probability drop when top edges are removed
-  sufficiency_retained_pct?: number;   // probability retained when ONLY top edges are kept
+  necessity_delta_pct?: number; // probability drop when top edges are removed
+  sufficiency_retained_pct?: number; // probability retained when ONLY top edges are kept
   sufficiency_class_preserved?: boolean;
   sufficiency_prob?: number;
-  
+
   // Phase B Multi-Objective Value Function & Toxicity Ranking
   ranking?: RankingBlock | null;
   v_score?: number;
@@ -148,7 +149,7 @@ export interface SearchRequest {
   cell_line: string;
   max_candidates?: number;
   top_k?: number;
-  search_method?: 'beam' | 'greedy' | 'mcts';
+  search_method?: "beam" | "greedy" | "mcts";
   beam_width?: number;
   n_simulations?: number;
   mcts_c?: number;
@@ -170,13 +171,12 @@ export interface SearchResponse {
   results: PredictionResult[];
 }
 
-
 export interface WhyNotRequest {
   disease: string;
   cell_line: string;
   question: string;
   drug_x?: string;
-  search_method?: 'beam' | 'greedy' | 'mcts';
+  search_method?: "beam" | "greedy" | "mcts";
 }
 
 export interface WhyNotScoredPair {
@@ -196,10 +196,10 @@ export interface WhyNotResponse {
     id: string | null;
     name: string;
   };
-  status?: 'scored' | 'filtered' | 'unknown_drug' | 'unsupported_question';
+  status?: "scored" | "filtered" | "unknown_drug" | "unsupported_question";
   best_pair?: WhyNotScoredPair | null;
   reference_top?: WhyNotScoredPair | null;
-  verdict?: 'competitive' | 'weaker' | 'filtered' | 'not_in_graph';
+  verdict?: "competitive" | "weaker" | "filtered" | "not_in_graph";
   explanation_text?: string;
   literature?: {
     citations: LiteratureCitation[];
@@ -218,14 +218,14 @@ export interface CellLineRelevanceStatus {
 }
 
 export interface FaithfulnessStatus {
-  status: 'verified' | 'requires_verification' | 'pending' | 'unavailable';
+  status: "verified" | "requires_verification" | "pending" | "unavailable";
   necessityDelta?: number;
   sufficiencyRetained?: number;
   classPreserved?: boolean;
   verdictMessage: string;
 }
 
-export type EntityType = 'drug' | 'protein' | 'gene' | 'pathway' | 'disease';
+export type EntityType = "drug" | "protein" | "gene" | "pathway" | "disease";
 
 export interface KGNode {
   id: string;
@@ -251,7 +251,10 @@ export interface KGGraph {
 
 export interface ChatAnalysisRequest {
   message: string;
-  conversation_history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  conversation_history?: Array<{
+    role: "user" | "assistant" | "system";
+    content: string;
+  }>;
   context?: {
     drug_a?: string;
     drug_b?: string;
@@ -267,4 +270,3 @@ export interface ChatAnalysisResponse {
   tool_calls_count: number;
   tool_results?: Array<Record<string, unknown>>;
 }
-

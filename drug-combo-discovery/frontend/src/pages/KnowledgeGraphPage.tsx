@@ -9,7 +9,7 @@ import {
 } from "@xyflow/react";
 import type { Node, Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Network, Search, Filter, X, Dna } from "lucide-react";
+import { Filter, X, Dna } from "lucide-react";
 import { PRIME_KG_SUBGRAPH } from "../services/kgData";
 import type { KGNode, EntityType } from "../types/api";
 
@@ -51,16 +51,16 @@ const KGExplorerNode = ({ data }: { data: any }) => {
 
   return (
     <div
-      className={`px-3 py-2 rounded-md border shadow-xs min-w-[130px] max-w-[190px] cursor-pointer transition-all ${
+      className={`px-3 py-2 rounded-none border min-w-[130px] max-w-[190px] cursor-pointer transition-colors ${
         isHighlighted
-          ? "ring-2 ring-[#2F6B5E] scale-105 shadow-md " + typeStyles.bg
-          : "hover:ring-1 hover:ring-[#2F6B5E]/40 " + typeStyles.bg
+          ? "ring-1 ring-[#1A535C] " + typeStyles.bg
+          : "hover:border-[#1A535C] " + typeStyles.bg
       } ${typeStyles.border}`}
     >
       <Handle type="target" position={Position.Top} className="!bg-[#6B746F]" />
       <div className="flex items-center justify-between mb-1">
         <span
-          className={`text-[9px] font-mono font-semibold uppercase px-1.5 py-0.5 rounded ${typeStyles.badge}`}
+          className={`text-[9px] font-mono font-medium px-1.5 py-0.5 rounded ${typeStyles.badge}`}
         >
           {data.type}
         </span>
@@ -90,7 +90,7 @@ const nodeTypes = {
 };
 
 export const KnowledgeGraphPage: React.FC = () => {
-  // Pre-populate with Cyclophosphamide so the page opens on the demo anchor drug's
+  // Pre-populate with Cyclophosphamide so the page opens on a reference anchor drug's
   // 1-hop neighborhood rather than an arbitrary full-graph slice.
   const [searchQuery, setSearchQuery] = useState("Cyclophosphamide");
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(
@@ -300,71 +300,61 @@ export const KnowledgeGraphPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="border-b border-[#E5E2DC] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="border-b border-[#CFC9BC] pb-3 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <Network className="w-5 h-5 text-[#2F6B5E]" />
-            <h2 className="text-2xl font-semibold text-[#1C2421]">
-              PrimeKG Knowledge Graph Explorer
-            </h2>
-          </div>
-          <p className="text-xs text-[#7A827C] mt-0.5">
-            Exploratory topology of verified precision oncology relationships
-            across Drugs, Targets, Pathways, and Indications
+          <p className="page-kicker">Neighborhood</p>
+          <h2 className="page-title">PrimeKG neighborhood</h2>
+          <p className="page-lede">
+            Explore 1-hop topology around drugs, targets, pathways, and
+            indications from the curated PrimeKG subgraph.
           </p>
         </div>
 
-        {/* Search Bar */}
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-[#8A918C] absolute inset-y-0 left-3 my-auto pointer-events-none" />
+        <div className="relative w-full sm:w-72">
+          <label className="bench-label block mb-0.5">Anchor entity</label>
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search entity (e.g. Cyclophosphamide, MGMT)..."
-            className="w-full pl-9 pr-8 py-2 bg-[#FFFEFB] border border-[#D8D5CE] focus:border-[#2F6B5E] rounded-md text-xs text-[#1C2421] outline-none"
+            placeholder="e.g. Cyclophosphamide, MGMT"
+            className="bench-input pr-8"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
-              title="Clear search — shows full subgraph"
-              className="absolute inset-y-0 right-2 my-auto text-[#8A918C] hover:text-[#1C2421]"
+              title="Clear search"
+              className="absolute right-0 bottom-2 text-[#6B746C] hover:text-[#1A1F1C]"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
-          {/* Neighbourhood mode badge */}
           {searchQuery.trim() && (
-            <span className="absolute -bottom-5 left-0 text-[10px] font-mono text-[#2F6B5E]">
-              Showing 1-hop neighbourhood · clear to see full slice
+            <span className="absolute -bottom-4 left-0 meta-text text-[#1A535C]">
+              1-hop neighbourhood · clear for full slice
             </span>
           )}
         </div>
       </div>
 
-      {/* Prominent Scientific Scope Banner */}
-      <div className="bg-[#F3F1EC] border border-[#D8D5CE] rounded-md px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[#3D4742]">
-        <div className="flex items-center gap-2">
-          <Dna className="w-4 h-4 text-[#2F6B5E] shrink-0" />
+      {/* Scope */}
+      <div className="bench-panel flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[12px] text-[#4A524C]">
+        <div className="flex items-start gap-2">
+          <Dna className="w-4 h-4 text-[#1A535C] shrink-0 mt-0.5" />
           <span>
-            <strong>Curated Subgraph Scope: </strong>
-            Showing a curated oncology subgraph (8 reference compounds, 76
-            biological entities, 120 verified edges) extracted from PrimeKG —
-            not the full PrimeKG index.
+            Curated oncology subgraph — 8 reference compounds, 76 entities, 120
+            edges from PrimeKG (not the full index).
           </span>
         </div>
-        <span className="text-[11px] font-mono text-[#6B746F] shrink-0 bg-[#EEEBE5] px-2 py-0.5 rounded border border-[#E5E2DC]">
-          Static Slice &bull; Live Graph API planned
+        <span className="id-text shrink-0">
+          Static slice · live graph API planned
         </span>
       </div>
 
-      {/* Filter Bar: Node Types & Relation Types */}
-      <div className="syn-card rounded-lg p-4 space-y-3 text-xs">
+      <div className="bench-panel space-y-3 text-xs">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="font-semibold text-[#5A635E] uppercase tracking-wide text-[11px] flex items-center gap-1.5">
+            <span className="font-semibold text-[#5A635E] text-[11px] flex items-center gap-1.5">
               <Filter className="w-3.5 h-3.5 text-[#2F6B5E]" />
               Entity Types:
             </span>
@@ -376,7 +366,7 @@ export const KnowledgeGraphPage: React.FC = () => {
                     key={t}
                     type="button"
                     onClick={() => toggleType(t)}
-                    className={`px-2.5 py-1 rounded font-mono uppercase tracking-wide border transition-all cursor-pointer ${
+                    className={`px-2 py-0.5 text-[12px] capitalize border cursor-pointer ${
                       isChecked
                         ? t === "drug"
                           ? "bg-[#D4E5DF] text-[#25564B] border-[#2F6B5E]"
@@ -385,7 +375,7 @@ export const KnowledgeGraphPage: React.FC = () => {
                             : t === "pathway"
                               ? "bg-[#EDE8F3] text-[#6B5B8A] border-[#8B7BA8]"
                               : "bg-[#D4E8E8] text-[#2F5E5D] border-[#4A8B8A]"
-                        : "bg-[#F3F1EC] text-[#8A918C] border-[#E5E2DC]"
+                        : "bg-transparent text-[#8A918C] border-[#CFC9BC]"
                     }`}
                   >
                     {t}
@@ -395,17 +385,16 @@ export const KnowledgeGraphPage: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-[11px] font-mono text-[#6B746F]">
-            <span>Displaying:</span>
-            <strong className="text-[#1C2421]">{flowNodes.length} nodes</strong>
-            <span>&bull;</span>
-            <strong className="text-[#1C2421]">{flowEdges.length} edges</strong>
+          <div className="flex items-center gap-2 text-[11px] text-[#6B746C]">
+            <span>
+              {flowNodes.length} nodes · {flowEdges.length} edges
+            </span>
           </div>
         </div>
 
         {/* Relation Filter Tags */}
         <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-[#EEEBE5]">
-          <span className="font-semibold text-[#5A635E] text-[11px] uppercase tracking-wide">
+          <span className="font-medium text-[#5A635E] text-[11px]">
             Relations:
           </span>
           {allRelations.map((rel) => {
@@ -415,10 +404,10 @@ export const KnowledgeGraphPage: React.FC = () => {
                 key={rel}
                 type="button"
                 onClick={() => toggleRelation(rel)}
-                className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                className={`text-[11px] px-0 py-0.5 border-b transition-colors cursor-pointer capitalize ${
                   isChecked
-                    ? "bg-[#E8F0ED] text-[#25564B] border-[#B5CFC6]"
-                    : "bg-[#F3F1EC] text-[#8A918C] border-[#E5E2DC]"
+                    ? "text-[#1A535C] border-[#1A535C]"
+                    : "text-[#8A918C] border-transparent hover:text-[#4A524C]"
                 }`}
               >
                 {rel.replace(/_/g, " ")}
@@ -430,7 +419,7 @@ export const KnowledgeGraphPage: React.FC = () => {
 
       {/* Main Canvas & Inspector Split */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        <div className="lg:col-span-3 h-[580px] border border-[#D0CDC5] rounded-lg overflow-hidden relative bg-[#F3F1EC] shadow-[0_1px_2px_rgba(28,36,33,0.04),0_4px_14px_rgba(28,36,33,0.07)]">
+        <div className="lg:col-span-3 h-[580px] border border-[#D0CDC5] rounded-none overflow-hidden relative bg-[#F3F1EC]">
           <ReactFlow
             nodes={flowNodes}
             edges={flowEdges}
@@ -465,22 +454,22 @@ export const KnowledgeGraphPage: React.FC = () => {
                   );
                   setSelectedRelations(new Set(allRelations));
                 }}
-                className="px-3 py-1.5 bg-[#2F6B5E] hover:bg-[#25564B] text-[#FFFEFB] rounded text-xs font-semibold cursor-pointer"
+                className="bench-btn"
               >
                 Reset to Default View
               </button>
             </div>
           )}
 
-          <div className="absolute bottom-3 left-3 bg-[#FFFEFB]/90 border border-[#E5E2DC] px-2.5 py-1 rounded text-[11px] font-mono text-[#6B746F] pointer-events-none">
-            Click any node to open metadata inspection panel
+          <div className="absolute bottom-3 left-3 bg-[#F5F5ED]/95 border border-[#CFC9BC] px-2 py-1 text-[11px] text-[#6B746C] pointer-events-none">
+            Click a node to inspect
           </div>
         </div>
 
         {/* Entity Inspector Drawer */}
-        <div className="syn-card rounded-lg p-4 flex flex-col">
+        <div className="border border-[#CFC9BC] p-4 flex flex-col">
           <div className="flex items-center justify-between border-b border-[#E5E2DC] pb-3 mb-4">
-            <h3 className="text-sm font-semibold text-[#1C2421] uppercase tracking-wide">
+            <h3 className="text-sm font-medium text-[#1C2421]">
               Entity Inspector
             </h3>
             {selectedEntity && (
@@ -505,35 +494,35 @@ export const KnowledgeGraphPage: React.FC = () => {
           ) : (
             <div className="space-y-4 text-xs overflow-y-auto max-h-[500px]">
               <div>
-                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[#EEEBE5] text-[#6B746F] border border-[#E5E2DC]">
+                <span className="bench-label capitalize">
                   {selectedEntity.type}
                 </span>
-                <h4 className="text-lg font-semibold text-[#1C2421] mt-1.5">
+                <h4 className="section-title mt-0.5">
                   {selectedEntity.name}
                 </h4>
               </div>
 
-              <div className="bg-[#F3F1EC] border border-[#E5E2DC] rounded p-3 font-mono space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-[#6B746F]">Entity ID:</span>
-                  <span className="font-semibold text-[#1C2421]">
+              <div className="border-y border-[#CFC9BC] divide-y divide-[#CFC9BC] text-[13px]">
+                <div className="flex justify-between py-2">
+                  <span className="meta-text">Entity ID</span>
+                  <span className="id-text text-[#1A1F1C]">
                     {selectedEntity.id}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[#6B746F]">Network Degree:</span>
-                  <span className="font-bold text-[#2F6B5E]">
+                <div className="flex justify-between py-2">
+                  <span className="meta-text">Network degree</span>
+                  <span className="metric-value text-[14px]">
                     {selectedEntity.degree || connectedEdges.length}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[#6B746F]">Namespace:</span>
-                  <span className="text-[#1C2421]">PrimeKG Harmonized</span>
+                <div className="flex justify-between py-2">
+                  <span className="meta-text">Namespace</span>
+                  <span className="text-[#1A1F1C]">PrimeKG</span>
                 </div>
               </div>
 
               <div>
-                <span className="font-semibold text-[#3D4742] uppercase tracking-wide text-[11px] block mb-2">
+                <span className="font-semibold text-[#3D4742] text-[11px] block mb-2">
                   Connected Relationships ({connectedEdges.length}):
                 </span>
                 <div className="space-y-2 max-h-56 overflow-y-auto divide-y divide-[#EEEBE5]">

@@ -2,12 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   MessageSquare,
   Send,
-  Bot,
-  User,
-  Wrench,
   Loader2,
   AlertCircle,
-  HelpCircle,
   PanelRightClose,
 } from "lucide-react";
 import { sendAnalysisChatMessage } from "../../services/api";
@@ -35,58 +31,12 @@ const MAX_W = 520;
 const now = () =>
   new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-function buildDummyReply(
-  question: string,
-  prediction: PredictionResult,
-): { content: string; toolsUsed: string[] } {
-  const pair = `${prediction.drug_a_name} + ${prediction.drug_b_name}`;
-  const q = question.toLowerCase();
-
-  if (q.includes("mechanism") || q.includes("biological")) {
-    return {
-      toolsUsed: ["predict_pair"],
-      content:
-        `[Demo] For ${pair} in ${prediction.cell_line}, shared pathway edges around DNA damage / repair are highlighted. ` +
-        `Class: ${prediction.predicted_class} (p_syn ≈ ${prediction.p_synergy?.toFixed(3) ?? "n/a"}).`,
-    };
-  }
-  if (q.includes("pubmed") || q.includes("paper") || q.includes("literature")) {
-    return {
-      toolsUsed: ["get_literature"],
-      content: `[Demo] Literature preview for ${pair}. Live mode uses PubMed via SynThera tools.`,
-    };
-  }
-  if (q.includes("why not")) {
-    return {
-      toolsUsed: ["why_not"],
-      content: `[Demo] Why-not: alias → filter → graph membership → GNN score → beam comparison for ${prediction.cell_line}.`,
-    };
-  }
-  return {
-    toolsUsed: ["predict_pair"],
-    content: `[Demo] Assistant for ${pair} @ ${prediction.cell_line}. Ask about mechanism, literature, or why-not.`,
-  };
-}
-
 function seedMessages(prediction: PredictionResult): Message[] {
   return [
     {
       id: "init-1",
       role: "assistant",
-      content: `Research assistant for ${prediction.drug_a_name} × ${prediction.drug_b_name} (${prediction.cell_line}). Ask anything grounded in SynThera tools.`,
-      timestamp: now(),
-    },
-    {
-      id: "demo-user-1",
-      role: "user",
-      content: "What is the biological mechanism of this pair?",
-      timestamp: now(),
-    },
-    {
-      id: "demo-assistant-1",
-      role: "assistant",
-      content: buildDummyReply("biological mechanism", prediction).content,
-      toolsUsed: ["predict_pair"],
+      content: `Context: ${prediction.drug_a_name} × ${prediction.drug_b_name} (${prediction.cell_line}). Questions are answered with SynThera tools.`,
       timestamp: now(),
     },
   ];
@@ -112,7 +62,6 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
 
   const predictionKey = `${prediction.drug_a}|${prediction.drug_b}|${prediction.cell_line}`;
 
-  // Fresh Analysis visit / new pair → offer greeting once (not again after close)
   useEffect(() => {
     setMessages(seedMessages(prediction));
     setErrorMessage(null);
@@ -127,7 +76,6 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
     predictionKey,
   ]);
 
-  // Auto-dismiss greeting after ~3.5s
   useEffect(() => {
     if (!showGreeting || isOpen) return;
     const t = window.setTimeout(() => setShowGreeting(false), 3500);
@@ -183,7 +131,7 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
     setErrorMessage(null);
 
     const history = messages
-      .filter((m) => !m.id.startsWith("init") && !m.id.startsWith("demo"))
+      .filter((m) => !m.id.startsWith("init"))
       .map((m) => ({ role: m.role, content: m.content }));
 
     try {
@@ -206,19 +154,12 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
           timestamp: now(),
         },
       ]);
-    } catch {
-      const dummy = buildDummyReply(text, prediction);
-      await new Promise((r) => setTimeout(r, 500));
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          content: dummy.content,
-          toolsUsed: dummy.toolsUsed,
-          timestamp: now(),
-        },
-      ]);
+    } catch (err: unknown) {
+      console.error("Chat error:", err);
+      setErrorMessage(
+        (err as Error)?.message ||
+          "Failed to communicate with research assistant",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -232,7 +173,7 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
 
   if (!isOpen) {
     return (
-      <div className="fixed bottom-5 right-5 z-[60] flex flex-col items-end gap-3 pointer-events-none">
+      <div className="fixed bottom-5 right-5 z-[60] flex flex-col items-end gap-2 pointer-events-none">
         {showGreeting && (
           <button
             type="button"
@@ -240,12 +181,10 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
               setShowGreeting(false);
               onOpenChange(true);
             }}
-            className="pointer-events-auto max-w-[240px] text-left px-4 py-3 rounded-2xl rounded-br-md bg-[#FFFEFB] border border-[#E5E2DC] shadow-[0_8px_28px_rgba(28,36,33,0.10)] text-sm text-[#1C2421] cursor-pointer hover:border-[#2F6B5E]/50 transition-all animate-fade-in"
+            className="pointer-events-auto max-w-[220px] text-left px-3 py-2.5 bg-[#F5F5ED] border border-[#CFC9BC] text-[13px] text-[#1A1F1C] cursor-pointer hover:border-[#1A535C]"
           >
-            <span className="font-semibold text-[#2F6B5E] block text-xs mb-0.5">
-              Research Assistant
-            </span>
-            Hi! How can I help you?
+            <span className="bench-label block mb-0.5">Ask this record</span>
+            Mechanism, literature, or ranking
           </button>
         )}
         <button
@@ -254,11 +193,11 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
             setShowGreeting(false);
             onOpenChange(true);
           }}
-          className="pointer-events-auto w-14 h-14 rounded-full bg-[#2F6B5E] hover:bg-[#25564B] text-[#FFFEFB] shadow-[0_8px_24px_rgba(47,107,94,0.28)] flex items-center justify-center cursor-pointer transition-transform hover:scale-105"
-          title="Open research assistant"
-          aria-label="Open research assistant"
+          className="pointer-events-auto w-10 h-10 border border-[#1A1F1C] bg-[#1A1F1C] text-[#F5F5ED] flex items-center justify-center cursor-pointer hover:bg-[#1A535C] hover:border-[#1A535C]"
+          title="Open assistant"
+          aria-label="Open assistant"
         >
-          <MessageSquare className="w-5 h-5" />
+          <MessageSquare className="w-4 h-4" />
         </button>
       </div>
     );
@@ -266,7 +205,7 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
 
   return (
     <aside
-      className="shrink-0 flex flex-col border-l border-[#E5E2DC] bg-[#FFFEFB] sticky top-0 relative"
+      className="shrink-0 flex flex-col border-l border-[#CFC9BC] bg-[#FFFEF8] sticky top-0 relative"
       style={{
         width,
         minHeight: "calc(100vh - 9rem)",
@@ -274,7 +213,6 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
       }}
       aria-label="Research assistant panel"
     >
-      {/* Resize handle */}
       <div
         role="separator"
         aria-orientation="vertical"
@@ -284,28 +222,22 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
           document.body.style.cursor = "col-resize";
           document.body.style.userSelect = "none";
         }}
-        className="absolute left-0 top-0 bottom-0 w-1.5 -ml-0.5 cursor-col-resize z-10 hover:bg-[#2F6B5E]/40 active:bg-[#2F6B5E]/60"
+        className="absolute left-0 top-0 bottom-0 w-1.5 -ml-0.5 cursor-col-resize z-10 hover:bg-[#1A535C]/30 active:bg-[#1A535C]/50"
       />
 
-      {/* Header */}
-      <div className="shrink-0 h-12 px-3 border-b border-[#E5E2DC] flex items-center justify-between gap-2 bg-[#F3F1EC]">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 rounded-md bg-[#2F6B5E] text-[#FFFEFB] flex items-center justify-center shrink-0">
-            <MessageSquare className="w-3.5 h-3.5" />
+      <div className="shrink-0 h-11 px-3 border-b border-[#CFC9BC] flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[13px] font-medium text-[#1A1F1C] truncate">
+            Research assistant
           </div>
-          <div className="min-w-0">
-            <div className="text-xs font-semibold text-[#1C2421] truncate">
-              Research Assistant
-            </div>
-            <div className="text-[10px] font-mono text-[#6B746F] truncate">
-              {prediction.drug_a_name} × {prediction.drug_b_name}
-            </div>
+          <div className="id-text truncate">
+            {prediction.drug_a_name} × {prediction.drug_b_name}
           </div>
         </div>
         <button
           type="button"
           onClick={() => onOpenChange(false)}
-          className="p-1.5 rounded-md text-[#6B746F] hover:bg-[#E5E2DC] hover:text-[#1C2421] cursor-pointer"
+          className="p-1.5 text-[#6B746C] hover:text-[#1A1F1C] cursor-pointer"
           title="Close panel"
           aria-label="Close research assistant"
         >
@@ -313,75 +245,61 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
         </button>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-[#F6F4EF] min-h-0">
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            className={`${msg.role === "user" ? "pl-4" : "pr-2"}`}
           >
-            {msg.role === "assistant" && (
-              <div className="w-6 h-6 rounded-full bg-[#2F6B5E] text-[#FFFEFB] flex items-center justify-center shrink-0 mt-0.5">
-                <Bot className="w-3.5 h-3.5" />
-              </div>
-            )}
-            <div className="max-w-[88%] space-y-1">
-              <div
-                className={`rounded-xl px-3 py-2 text-xs leading-normal ${
-                  msg.role === "user"
-                    ? "bg-[#2F6B5E] text-[#FFFEFB] rounded-br-sm"
-                    : "bg-[#FFFEFB] text-[#1C2421] border border-[#E5E2DC] rounded-bl-sm"
-                }`}
-              >
-                <p className="whitespace-pre-wrap">{msg.content}</p>
-              </div>
-              {msg.toolsUsed && msg.toolsUsed.length > 0 && (
-                <div className="flex items-center gap-1 px-1 text-[10px] font-mono text-[#6B746F]">
-                  <Wrench className="w-3 h-3 text-[#2F6B5E]" />
-                  {msg.toolsUsed.join(", ")}
-                </div>
-              )}
+            <div className="flex items-baseline justify-between gap-2 mb-0.5">
+              <span className="bench-label">
+                {msg.role === "user" ? "You" : "Assistant"}
+              </span>
+              <span className="id-text">{msg.timestamp}</span>
             </div>
-            {msg.role === "user" && (
-              <div className="w-6 h-6 rounded-full bg-[#3D4742] text-[#FFFEFB] flex items-center justify-center shrink-0 mt-0.5">
-                <User className="w-3.5 h-3.5" />
-              </div>
+            <p
+              className={`text-[13px] leading-relaxed whitespace-pre-wrap ${
+                msg.role === "user"
+                  ? "text-[#1A1F1C] border-l-2 border-[#1A535C] pl-2"
+                  : "text-[#4A524C]"
+              }`}
+            >
+              {msg.content}
+            </p>
+            {msg.toolsUsed && msg.toolsUsed.length > 0 && (
+              <p className="id-text mt-1">{msg.toolsUsed.join(", ")}</p>
             )}
           </div>
         ))}
         {isLoading && (
-          <div className="flex items-center gap-2 text-xs text-[#6B746F]">
-            <Loader2 className="w-4 h-4 animate-spin text-[#2F6B5E]" />
-            Thinking…
+          <div className="flex items-center gap-2 text-[12px] text-[#6B746C]">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#1A535C]" />
+            Working…
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Prompts */}
-      <div className="shrink-0 px-3 py-2 border-t border-[#E5E2DC] bg-[#FFFEFB] flex flex-wrap gap-1.5">
-        <span className="text-[10px] text-[#8A918C] flex items-center gap-1 w-full">
-          <HelpCircle className="w-3 h-3" /> Try
-        </span>
+      <div className="shrink-0 px-3 py-2 border-t border-[#CFC9BC] flex flex-wrap gap-x-3 gap-y-1">
+        <span className="bench-label w-full">Try</span>
         {sampleQuestions.map((q) => (
           <button
             key={q}
             type="button"
             disabled={isLoading}
             onClick={() => handleSendMessage(q)}
-            className="text-[10px] bg-[#E8F0ED] border border-[#B5CFC6] text-[#25564B] px-2 py-0.5 rounded-full cursor-pointer disabled:opacity-50 hover:bg-[#D4E5DF]"
+            className="text-[12px] text-[#1A535C] underline underline-offset-2 decoration-[#CFC9BC] hover:decoration-[#1A535C] cursor-pointer disabled:opacity-50"
           >
-            {q.length > 28 ? `${q.slice(0, 26)}…` : q}
+            {q.length > 32 ? `${q.slice(0, 30)}…` : q}
           </button>
         ))}
       </div>
 
-      {/* Input */}
-      <div className="shrink-0 p-2.5 border-t border-[#E5E2DC] bg-[#FFFEFB]">
+      <div className="shrink-0 p-2.5 border-t border-[#CFC9BC]">
         {errorMessage && (
-          <div className="flex items-center gap-1.5 mb-2 text-[10px] text-[#8B4040]">
-            <AlertCircle className="w-3 h-3" />
-            <span className="truncate">{errorMessage}</span>
+          <div className="flex items-start gap-1.5 mb-2 text-[12px] text-[#A84B4B]">
+            <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
+            <span className="break-words">{errorMessage}</span>
           </div>
         )}
         <form
@@ -389,7 +307,7 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
             e.preventDefault();
             handleSendMessage();
           }}
-          className="flex items-end gap-1.5"
+          className="flex items-end gap-2"
         >
           <textarea
             value={inputMessage}
@@ -402,13 +320,13 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
                 handleSendMessage();
               }
             }}
-            placeholder="Ask about this pair… (Enter to send)"
-            className="flex-1 px-3 py-2 bg-[#F3F1EC] border border-[#E5E2DC] rounded-lg text-xs resize-none focus:outline-none focus:ring-1 focus:ring-[#2F6B5E] focus:border-[#2F6B5E]"
+            placeholder="Ask about this pair…"
+            className="flex-1 px-0 py-1.5 bg-transparent border-0 border-b border-[#CFC9BC] text-[13px] resize-none focus:outline-none focus:border-[#1A535C]"
           />
           <button
             type="submit"
             disabled={!inputMessage.trim() || isLoading}
-            className="p-2.5 bg-[#2F6B5E] hover:bg-[#25564B] disabled:bg-[#D8D5CE] text-[#FFFEFB] rounded-lg cursor-pointer disabled:cursor-not-allowed"
+            className="bench-btn !px-2.5 !py-2 shrink-0"
             aria-label="Send"
           >
             {isLoading ? (
