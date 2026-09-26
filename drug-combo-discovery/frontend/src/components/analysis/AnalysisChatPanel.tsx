@@ -1,5 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Wrench, Loader2, AlertCircle, CornerDownRight } from 'lucide-react';
+import {
+  MessageSquare,
+  ChevronDown,
+  ChevronUp,
+  Send,
+  Bot,
+  User,
+  Wrench,
+  Loader2,
+  AlertCircle,
+  HelpCircle,
+} from 'lucide-react';
 import { sendAnalysisChatMessage } from '../../services/api';
 import type { PredictionResult } from '../../types/api';
 
@@ -15,14 +26,8 @@ interface AnalysisChatPanelProps {
   prediction: PredictionResult;
 }
 
-const SAMPLE_QUESTIONS = [
-  'What is the biological mechanism of this combination?',
-  'What PubMed literature supports this prediction?',
-  'Why not Temozolomide instead?',
-  'Search for other synergistic candidates in this cell line.',
-];
-
 export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({ prediction }) => {
+  const [isOpen, setIsOpen] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -31,21 +36,27 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({ prediction
       id: 'init-1',
       role: 'assistant',
       content:
-        `Research assistant initialized for ${prediction.drug_a_name} + ${prediction.drug_b_name} in ${prediction.cell_line}.\n\n` +
-        `I only state facts returned directly by SynThera's prediction, search, why-not, and literature tools. ` +
-        `I will not add scientifically plausible but unverified claims.`,
+        `Hello! I am your grounded research assistant for ${prediction.drug_a_name} + ${prediction.drug_b_name} in ${prediction.cell_line}. ` +
+        `I only state facts that come directly from SynThera's tools (predict_pair, search_combinations, why_not, get_literature). ` +
+        `Ask me about this pair's mechanism, supporting literature, or why another drug was excluded.`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
 
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (isOpen) {
+      scrollToBottom();
+    }
+  }, [messages, isOpen]);
 
-  const handleSend = async (textToSend?: string) => {
-    const text = (textToSend ?? inputMessage).trim();
+  const handleSendMessage = async (textToSend?: string) => {
+    const text = (textToSend || inputMessage).trim();
     if (!text || isLoading) return;
 
     const userMsg: Message = {
@@ -60,9 +71,13 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({ prediction
     setIsLoading(true);
     setErrorMessage(null);
 
+    // Build conversation history for API
     const history = messages
       .filter((m) => m.id !== 'init-1')
-      .map((m) => ({ role: m.role, content: m.content }));
+      .map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
 
     try {
       const response = await sendAnalysisChatMessage({
@@ -75,232 +90,206 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({ prediction
         },
       });
 
-      setMessages((prev) => [...prev, {
+      const assistantMsg: Message = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
         content: response.response,
         toolsUsed: response.tools_used,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      }]);
+      };
+
+      setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: any) {
-      const detail = err?.message || 'Connection failed';
+      console.error('Chat error:', err);
+      const detail = err?.message || 'Failed to communicate with research assistant';
       setErrorMessage(detail);
-      setMessages((prev) => [...prev, {
-        id: `err-${Date.now()}`,
-        role: 'assistant',
-        content: `Unable to reach analysis service: ${detail}. Ensure OPENROUTER_API_KEY is set in your .env.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `err-${Date.now()}`,
+          role: 'assistant',
+          content: `Error: ${detail}. If OPENROUTER_API_KEY is not configured, please set it in your .env configuration.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const sampleQuestions = [
+    `What is the biological mechanism of this pair?`,
+    `Are there PubMed papers supporting this?`,
+    `Why not Temozolomide?`,
+  ];
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {/* Context bar */}
-      <div style={{
-        backgroundColor: 'var(--accent-subtle)',
-        border: '1px solid var(--accent-border)',
-        borderRadius: 6,
-        padding: '8px 12px',
-        marginBottom: 14,
-        display: 'flex', alignItems: 'center', gap: 8,
-        fontSize: 12, fontFamily: 'var(--font-mono)',
-        color: 'var(--accent-text)',
-      }}>
-        <Wrench size={12} />
-        <span>Active context: </span>
-        <strong>{prediction.drug_a_name} + {prediction.drug_b_name}</strong>
-        <span style={{ color: 'var(--accent-border)' }}>·</span>
-        <span>{prediction.cell_line}</span>
-        <span style={{ color: 'var(--accent-border)' }}>·</span>
-        <span style={{ color: 'var(--text-muted)' }}>4 tools: predict_pair, search_combinations, why_not, get_literature</span>
-      </div>
-
-      {/* Message list */}
-      <div style={{
-        maxHeight: 440,
-        overflowY: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 0,
-        marginBottom: 12,
-      }}>
-        {messages.map((msg, i) => (
-          <div
-            key={msg.id}
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              borderTop: i > 0 ? '1px solid var(--border)' : undefined,
-              padding: '12px 0',
-            }}
-          >
-            {/* Role + timestamp header */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              marginBottom: 6,
-              fontSize: 11, fontFamily: 'var(--font-mono)',
-              color: 'var(--text-muted)',
-            }}>
-              <span style={{
-                fontWeight: 700,
-                color: msg.role === 'assistant' ? 'var(--accent)' : 'var(--text-secondary)',
-                textTransform: 'uppercase', letterSpacing: '0.04em',
-              }}>
-                {msg.role === 'assistant' ? 'SynThera' : 'You'}
+    <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl shadow-xs overflow-hidden transition-all duration-300">
+      {/* Collapsible Header */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-5 py-4 flex items-center justify-between bg-gradient-to-r from-[#F8FAFC] to-[#F1F5F9] hover:from-[#F1F5F9] hover:to-[#E2E8F0] transition-colors cursor-pointer text-left"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-[#0D9488]/10 text-[#0D9488] flex items-center justify-center font-bold">
+            <MessageSquare className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-semibold text-[#0F172A]">
+                SynThera Research Assistant
+              </h4>
+              <span className="px-2 py-0.5 text-[10px] font-mono font-medium rounded-full bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">
+                Grounded Tool Calling
               </span>
-              <span style={{ color: 'var(--border-strong)' }}>·</span>
-              <span>{msg.timestamp}</span>
-              {msg.toolsUsed && msg.toolsUsed.length > 0 && (
-                <>
-                  <span style={{ color: 'var(--border-strong)' }}>·</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Wrench size={10} style={{ color: 'var(--accent)' }} />
-                    {msg.toolsUsed.map((t) => (
-                      <span key={t} style={{
-                        fontSize: 10, fontFamily: 'var(--font-mono)',
-                        backgroundColor: 'var(--accent-subtle)',
-                        border: '1px solid var(--accent-border)',
-                        color: 'var(--accent-text)',
-                        borderRadius: 3, padding: '1px 5px',
-                      }}>
-                        {t}
-                      </span>
-                    ))}
-                  </span>
-                </>
-              )}
             </div>
-
-            {/* Message body */}
-            <p style={{
-              fontSize: 13,
-              lineHeight: 1.6,
-              color: msg.role === 'assistant' ? 'var(--text-primary)' : 'var(--text-secondary)',
-              margin: 0,
-              whiteSpace: 'pre-wrap',
-              paddingLeft: msg.role === 'user' ? 16 : 0,
-              borderLeft: msg.role === 'user' ? '2px solid var(--border)' : 'none',
-            }}>
-              {msg.content}
+            <p className="text-xs text-[#64748B] mt-0.5">
+              Active Context: <span className="font-medium text-[#334155]">{prediction.drug_a_name} + {prediction.drug_b_name}</span> &bull; <span className="font-mono text-[#64748B]">{prediction.cell_line}</span>
             </p>
           </div>
-        ))}
+        </div>
 
-        {isLoading && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '12px 0',
-            borderTop: '1px solid var(--border)',
-            fontSize: 12, color: 'var(--text-muted)',
-            fontFamily: 'var(--font-mono)',
-          }}>
-            <Loader2 size={13} className="animate-spin" style={{ color: 'var(--accent)' }} />
-            <span>Invoking tools and compiling grounded response…</span>
+        <div className="flex items-center gap-2 text-xs font-semibold text-[#475569]">
+          <span>{isOpen ? 'Collapse Chat' : 'Open Grounded Chat'}</span>
+          {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </div>
+      </button>
+
+      {/* Expanded Panel */}
+      {isOpen && (
+        <div className="border-t border-[#E2E8F0] flex flex-col bg-[#F8FAFC]">
+          {/* Messages Container */}
+          <div className="p-4 sm:p-5 max-h-[460px] overflow-y-auto space-y-4">
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`flex gap-3 ${
+                  msg.role === 'user' ? 'justify-end' : 'justify-start'
+                }`}
+              >
+                {msg.role === 'assistant' && (
+                  <div className="w-7 h-7 rounded-full bg-[#0D9488] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                    <Bot className="w-4 h-4" />
+                  </div>
+                )}
+
+                <div className={`max-w-[85%] space-y-1.5 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                  <div
+                    className={`rounded-xl px-4 py-3 text-xs leading-relaxed ${
+                      msg.role === 'user'
+                        ? 'bg-[#0D9488] text-white shadow-xs rounded-tr-none'
+                        : 'bg-white text-[#1E293B] border border-[#E2E8F0] shadow-xs rounded-tl-none'
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+
+                  {/* Grounded Tool Usage Tag */}
+                  {msg.role === 'assistant' && msg.toolsUsed && msg.toolsUsed.length > 0 && (
+                    <div className="flex items-center gap-1.5 px-1 text-[11px] font-mono text-[#64748B]">
+                      <Wrench className="w-3 h-3 text-[#0D9488]" />
+                      <span>used:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {msg.toolsUsed.map((tool) => (
+                          <span
+                            key={tool}
+                            className="px-1.5 py-0.2 bg-[#F1F5F9] border border-[#CBD5E1] rounded text-[#334155] font-semibold"
+                          >
+                            {tool}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <span className="block text-[10px] text-[#94A3B8] px-1">
+                    {msg.timestamp}
+                  </span>
+                </div>
+
+                {msg.role === 'user' && (
+                  <div className="w-7 h-7 rounded-full bg-[#334155] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                    <User className="w-4 h-4" />
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {isLoading && (
+              <div className="flex gap-3 justify-start items-center text-xs text-[#64748B]">
+                <div className="w-7 h-7 rounded-full bg-[#0D9488]/20 text-[#0D9488] flex items-center justify-center shrink-0">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                </div>
+                <div className="bg-white border border-[#E2E8F0] rounded-xl px-4 py-2.5 shadow-xs flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-[#0D9488] animate-pulse" />
+                  <span>Evaluating tools & compiling grounded response...</span>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
-        )}
 
-        <div ref={scrollRef} />
-      </div>
+          {/* Quick Suggestion Chips */}
+          <div className="px-4 py-2 bg-[#F1F5F9] border-t border-[#E2E8F0] flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold text-[#64748B] flex items-center gap-1">
+              <HelpCircle className="w-3 h-3" /> Prompts:
+            </span>
+            {sampleQuestions.map((q) => (
+              <button
+                key={q}
+                type="button"
+                disabled={isLoading}
+                onClick={() => handleSendMessage(q)}
+                className="text-[11px] bg-white border border-[#CBD5E1] hover:border-[#0D9488] hover:text-[#0D9488] text-[#334155] px-2.5 py-1 rounded-full transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
 
-      {/* Error */}
-      {errorMessage && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 12px', marginBottom: 10,
-          backgroundColor: 'var(--error-subtle)',
-          border: '1px solid var(--error-border)',
-          borderRadius: 6,
-          fontSize: 12, color: 'var(--error)',
-        }}>
-          <AlertCircle size={13} />
-          <span>{errorMessage}</span>
+          {/* Input Box */}
+          <div className="p-3 sm:p-4 bg-white border-t border-[#E2E8F0] space-y-2">
+            {errorMessage && (
+              <div className="flex items-center gap-2 p-2 bg-[#FEF2F2] border border-[#FECACA] rounded-lg text-xs text-[#991B1B]">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#EF4444]" />
+                <span className="truncate">{errorMessage}</span>
+              </div>
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendMessage();
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={inputMessage}
+                disabled={isLoading}
+                onChange={(e) => setInputMessage(e.target.value)}
+                placeholder="Ask about this pair's mechanism, literature evidence, or why a drug was excluded..."
+                className="flex-1 px-3.5 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#0D9488] focus:border-[#0D9488] transition-all"
+              />
+              <button
+                type="submit"
+                disabled={!inputMessage.trim() || isLoading}
+                className="px-4 py-2.5 bg-[#0D9488] hover:bg-[#0F766E] disabled:bg-[#CBD5E1] text-white rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:cursor-not-allowed shadow-xs"
+              >
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
         </div>
       )}
-
-      {/* Quick prompts */}
-      <div style={{
-        display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10,
-      }}>
-        {SAMPLE_QUESTIONS.map((q) => (
-          <button
-            key={q}
-            type="button"
-            disabled={isLoading}
-            onClick={() => handleSend(q)}
-            style={{
-              fontSize: 11, fontFamily: 'var(--font-sans)',
-              padding: '5px 10px',
-              backgroundColor: 'var(--surface-subtle)',
-              border: '1px solid var(--border)',
-              borderRadius: 20,
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              transition: 'border-color 150ms, color 150ms',
-              display: 'flex', alignItems: 'center', gap: 4,
-            }}
-          >
-            <CornerDownRight size={10} style={{ color: 'var(--text-muted)' }} />
-            {q}
-          </button>
-        ))}
-      </div>
-
-      {/* Input */}
-      <form
-        onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-        style={{ display: 'flex', gap: 8 }}
-      >
-        <input
-          type="text"
-          value={inputMessage}
-          disabled={isLoading}
-          onChange={(e) => setInputMessage(e.target.value)}
-          placeholder="Ask about mechanism, literature, or alternative drugs…"
-          style={{
-            flex: 1,
-            padding: '9px 14px',
-            fontSize: 13,
-            fontFamily: 'var(--font-sans)',
-            backgroundColor: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            color: 'var(--text-primary)',
-            outline: 'none',
-            transition: 'border-color 150ms',
-          }}
-          onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
-          onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
-        />
-        <button
-          type="submit"
-          disabled={!inputMessage.trim() || isLoading}
-          style={{
-            padding: '9px 16px',
-            backgroundColor: 'var(--accent)',
-            border: 'none',
-            borderRadius: 6,
-            color: '#FFFFFF',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: 6,
-            opacity: !inputMessage.trim() || isLoading ? 0.5 : 1,
-            transition: 'opacity 150ms',
-          }}
-        >
-          {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-          Ask
-        </button>
-      </form>
-
-      {/* Grounding notice */}
-      <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
-        <strong style={{ color: 'var(--text-secondary)' }}>Grounding policy:</strong>{' '}
-        This assistant only states facts returned by SynThera tools. No outside biological knowledge is added.
-      </p>
     </div>
   );
 };

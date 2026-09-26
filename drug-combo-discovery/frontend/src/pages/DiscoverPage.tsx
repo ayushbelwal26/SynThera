@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeftRight, Play, ArrowRight, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeftRight, Play, ArrowRight, Clock } from 'lucide-react';
 import { useApp } from '../services/AppContext';
 import { predictCombination, searchCombinations } from '../services/api';
 import type { Drug, PredictionResult, SearchResponse } from '../types/api';
@@ -12,209 +12,40 @@ import { DiscoveryMode } from '../components/discover/DiscoveryMode';
 import { WhyNotSection } from '../components/discover/WhyNotSection';
 import { LoadingStages } from '../components/common/LoadingStages';
 import { AlertNotice } from '../components/common/AlertNotice';
+import { Badge } from '../components/common/Badge';
+import { ToxicityBadge } from '../components/common/ToxicityBadge';
 
-/* ── Predicted class pill ── */
-const ClassPill: React.FC<{ cls: string; size?: 'sm' | 'md' }> = ({ cls, size = 'md' }) => {
-  const map: Record<string, { bg: string; border: string; color: string }> = {
-    synergy:    { bg: 'var(--synergy-subtle)',    border: 'var(--synergy-border)',    color: 'var(--synergy)'    },
-    antagonism: { bg: 'var(--antagonism-subtle)', border: 'var(--antagonism-border)', color: 'var(--antagonism)' },
-    additive:   { bg: 'var(--additive-subtle)',   border: 'var(--additive-border)',   color: 'var(--additive)'   },
-  };
-  const style = map[cls] ?? map.additive;
-  return (
-    <span style={{
-      fontSize: size === 'sm' ? 10 : 11,
-      fontWeight: 700, fontFamily: 'var(--font-mono)',
-      letterSpacing: '0.06em', textTransform: 'uppercase',
-      backgroundColor: style.bg,
-      border: `1px solid ${style.border}`,
-      color: style.color,
-      borderRadius: 4, padding: size === 'sm' ? '2px 6px' : '3px 8px',
-    }}>
-      {cls}
-    </span>
-  );
-};
-
-/* ── Search result card ── */
-const SearchResultCard: React.FC<{
-  pair: PredictionResult;
-  idx: number;
-  isInspecting: boolean;
-  searchMethod?: string;
-  onInspect: () => void;
-}> = ({ pair, idx, isInspecting, searchMethod, onInspect }) => {
-  const [expanded, setExpanded] = useState(false);
-  const vScore = pair.v_score ?? pair.ranking?.v_score ?? pair.score;
-  const pSyn = pair.p_synergy ?? pair.ranking?.p_synergy ?? pair.score;
-
-  return (
-    <div style={{
-      backgroundColor: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: 8,
-      overflow: 'hidden',
-      boxShadow: 'var(--shadow-xs)',
-      transition: 'border-color 150ms',
-    }}>
-      {/* Main row */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '12px 16px', gap: 12, flexWrap: 'wrap',
-      }}>
-        {/* Rank + names + class */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <span style={{
-            fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700,
-            color: 'var(--text-muted)', flexShrink: 0,
-            width: 24, textAlign: 'center',
-          }}>
-            #{pair.rank ?? idx + 1}
-          </span>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                {pair.drug_a_name} + {pair.drug_b_name}
-              </span>
-              <ClassPill cls={pair.predicted_class} size="sm" />
-              {(pair.search_method === 'mcts' || searchMethod === 'mcts') && pair.mcts_visits !== undefined && (
-                <span style={{
-                  fontSize: 10, fontFamily: 'var(--font-mono)',
-                  color: 'var(--text-muted)',
-                  backgroundColor: 'var(--surface-subtle)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 3, padding: '1px 5px',
-                }}>
-                  {pair.mcts_visits} visits
-                </span>
-              )}
-            </div>
-            {/* Short explanation */}
-            <p style={{
-              fontSize: 12, color: 'var(--text-muted)',
-              marginTop: 3, lineHeight: 1.5,
-              overflow: 'hidden',
-              display: '-webkit-box',
-              WebkitLineClamp: expanded ? undefined : 2,
-              WebkitBoxOrient: 'vertical',
-            }}>
-              {pair.explanation_text}
-            </p>
-          </div>
-        </div>
-
-        {/* Scores + actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
-          {/* V-score */}
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: 1 }}>
-              V(pair)
-            </div>
-            <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>
-              {vScore.toFixed(4)}
-            </div>
-            <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--synergy)' }}>
-              p(syn)={pSyn.toFixed(3)}
-            </div>
-          </div>
-
-          {/* Expand toggle */}
-          <button
-            type="button"
-            onClick={() => setExpanded(!expanded)}
-            style={{
-              padding: '6px', borderRadius: 5,
-              backgroundColor: 'var(--surface-subtle)',
-              border: '1px solid var(--border)',
-              cursor: 'pointer', color: 'var(--text-muted)',
-              display: 'flex', alignItems: 'center',
-            }}
-            title={expanded ? 'Collapse details' : 'Expand details'}
-          >
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-
-          {/* Inspect button */}
-          <button
-            type="button"
-            disabled={isInspecting}
-            onClick={onInspect}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '7px 14px',
-              backgroundColor: isInspecting ? 'var(--surface-subtle)' : 'var(--accent)',
-              color: isInspecting ? 'var(--text-muted)' : '#FFFFFF',
-              border: `1px solid ${isInspecting ? 'var(--border)' : 'var(--accent)'}`,
-              borderRadius: 6,
-              fontSize: 12, fontWeight: 600,
-              cursor: isInspecting ? 'not-allowed' : 'pointer',
-              transition: 'background-color 150ms',
-              flexShrink: 0,
-            }}
-          >
-            {isInspecting ? (
-              <><svg className="animate-spin" viewBox="0 0 24 24" fill="none" style={{ width: 13, height: 13 }}><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" /><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75" /></svg>Loading…</>
-            ) : (
-              <>Inspect <ArrowRight size={13} /></>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Expanded detail */}
-      {expanded && (
-        <div style={{
-          borderTop: '1px solid var(--border)',
-          padding: '12px 16px',
-          backgroundColor: 'var(--surface-subtle)',
-          display: 'flex', flexWrap: 'wrap', gap: 16,
-        }}>
-          {/* Toxicity detail */}
-          {pair.ranking?.breakdown && (
-            <div style={{ minWidth: 200 }}>
-              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
-                Safety
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontFamily: 'var(--font-mono)' }}>
-                <span>DDI known: <strong style={{ color: pair.ranking.breakdown.has_known_ddi ? 'var(--antagonism)' : 'var(--synergy)' }}>
-                  {pair.ranking.breakdown.has_known_ddi === null ? 'Unknown' : pair.ranking.breakdown.has_known_ddi ? 'Yes' : 'No'}
-                </strong></span>
-                {pair.ranking.breakdown.side_effect_overlap !== null && (
-                  <span>SE overlap: <strong>{((pair.ranking.breakdown.side_effect_overlap ?? 0) * 100).toFixed(0)}%</strong></span>
-                )}
-                <span>Tox penalty: <strong>{pair.ranking.toxicity_penalty.toFixed(3)}</strong></span>
-              </div>
-            </div>
-          )}
-
-          {/* Faithfulness notice */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            <Clock size={11} />
-            Faithfulness ablation not computed during batch search. Click Inspect for full verification.
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-/* ── Main DiscoverPage ── */
 export const DiscoverPage: React.FC = () => {
   const navigate = useNavigate();
-  const { drugs, cellLineStatus, setCurrentPrediction, addRecentPrediction } = useApp();
+  const {
+    drugs,
+    cellLineStatus,
+    setCurrentPrediction,
+    addRecentPrediction,
+  } = useApp();
 
   const [activeTab, setActiveTab] = useState<'pair' | 'search'>('pair');
+
+  // Pair evaluation state
   const [drugA, setDrugA] = useState<Drug | null>(null);
   const [drugB, setDrugB] = useState<Drug | null>(null);
   const [cellLine, setCellLine] = useState<string>('T98G');
   const [diseaseContext, setDiseaseContext] = useState<string>('');
+
+  // Status & loading
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Discovery search results state
   const [searchDisease, setSearchDisease] = useState<string>('glioblastoma');
   const [searchResults, setSearchResults] = useState<SearchResponse | null>(null);
   const [inspectingPairIdx, setInspectingPairIdx] = useState<number | null>(null);
 
-  const handleSwapDrugs = () => { const t = drugA; setDrugA(drugB); setDrugB(t); };
+  const handleSwapDrugs = () => {
+    const temp = drugA;
+    setDrugA(drugB);
+    setDrugB(temp);
+  };
 
   const handleSelectPreset = (preset: BenchmarkPreset) => {
     setDrugA(preset.drugA);
@@ -226,246 +57,296 @@ export const DiscoverPage: React.FC = () => {
 
   const handleAnalyzePair = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!drugA || !drugB || !cellLine) { setErrorMsg('Please select both Compound A and Compound B.'); return; }
-    if (drugA.id === drugB.id) { setErrorMsg('Please select two distinct compounds.'); return; }
-    setIsLoading(true); setErrorMsg(null);
+    if (!drugA || !drugB || !cellLine) {
+      setErrorMsg('Please select both Compound A and Compound B to execute analysis.');
+      return;
+    }
+    if (drugA.id === drugB.id) {
+      setErrorMsg('Please select two distinct compounds for combination analysis.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+
     try {
-      const result = await predictCombination({ drug_a: drugA.id, drug_b: drugB.id, cell_line: cellLine, disease: diseaseContext.trim() || undefined });
-      setCurrentPrediction(result); addRecentPrediction(result); navigate('/analysis');
-    } catch (err: any) { setErrorMsg(err.message || 'Analysis service error.'); }
-    finally { setIsLoading(false); }
+      const result = await predictCombination({
+        drug_a: drugA.id,
+        drug_b: drugB.id,
+        cell_line: cellLine,
+        disease: diseaseContext.trim() || undefined,
+      });
+
+      setCurrentPrediction(result);
+      addRecentPrediction(result);
+      navigate('/analysis');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Analysis service error occurred during prediction.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleRunSearch = async (disease: string, targetCellLine: string, maxCandidates: number, topK: number, searchMethod: 'beam' | 'greedy' | 'mcts' = 'beam', nSimulations = 50, mctsC = 1.414) => {
-    setSearchDisease(disease); setIsLoading(true); setErrorMsg(null); setSearchResults(null);
+  const handleRunSearch = async (
+    disease: string,
+    targetCellLine: string,
+    maxCandidates: number,
+    topK: number,
+    searchMethod: 'beam' | 'greedy' | 'mcts' = 'beam',
+    nSimulations: number = 50,
+    mctsC: number = 1.414
+  ) => {
+    setSearchDisease(disease);
+    setIsLoading(true);
+    setErrorMsg(null);
+    setSearchResults(null);
+
     try {
-      const res = await searchCombinations({ disease, cell_line: targetCellLine, max_candidates: maxCandidates, top_k: topK, search_method: searchMethod, n_simulations: nSimulations, mcts_c: mctsC });
+      const res = await searchCombinations({
+        disease,
+        cell_line: targetCellLine,
+        max_candidates: maxCandidates,
+        top_k: topK,
+        search_method: searchMethod,
+        n_simulations: nSimulations,
+        mcts_c: mctsC,
+      });
       setSearchResults(res);
-    } catch (err: any) { setErrorMsg(err.message || 'Discovery failed. Verify the indication name.'); }
-    finally { setIsLoading(false); }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Combination discovery failed. Please verify the indication name.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  // When user clicks "Inspect Analysis" on a search result:
+  // Call /predict to get full faithfulness data, then navigate to /analysis.
   const handleSelectDiscoveredPair = async (pair: PredictionResult, idx: number) => {
     setInspectingPairIdx(idx);
     try {
-      const full = await predictCombination({ drug_a: pair.drug_a, drug_b: pair.drug_b, cell_line: pair.cell_line });
-      setCurrentPrediction(full); addRecentPrediction(full); navigate('/analysis');
+      const full = await predictCombination({
+        drug_a: pair.drug_a,
+        drug_b: pair.drug_b,
+        cell_line: pair.cell_line,
+      });
+      setCurrentPrediction(full);
+      addRecentPrediction(full);
+      navigate('/analysis');
     } catch {
-      setCurrentPrediction(pair); addRecentPrediction(pair); navigate('/analysis');
-    } finally { setInspectingPairIdx(null); }
+      // Fall back to search result without faithfulness if /predict fails
+      setCurrentPrediction(pair);
+      addRecentPrediction(pair);
+      navigate('/analysis');
+    } finally {
+      setInspectingPairIdx(null);
+    }
   };
 
   const handleInspectWhyNotPair = async (drugAId: string, drugBId: string, cl: string) => {
-    setIsLoading(true); setErrorMsg(null);
+    setIsLoading(true);
+    setErrorMsg(null);
     try {
-      const full = await predictCombination({ drug_a: drugAId, drug_b: drugBId, cell_line: cl });
-      setCurrentPrediction(full); addRecentPrediction(full); navigate('/analysis');
-    } catch (err: any) { setErrorMsg(err.message || 'Failed to inspect combination.'); }
-    finally { setIsLoading(false); }
+      const full = await predictCombination({
+        drug_a: drugAId,
+        drug_b: drugBId,
+        cell_line: cl,
+      });
+      setCurrentPrediction(full);
+      addRecentPrediction(full);
+      navigate('/analysis');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to inspect combination.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  /* ── Tab button ── */
-  const TabBtn: React.FC<{ id: 'pair' | 'search'; label: string }> = ({ id, label }) => (
-    <button
-      type="button"
-      onClick={() => { setActiveTab(id); setErrorMsg(null); }}
-      style={{
-        padding: '10px 16px',
-        fontSize: 13, fontWeight: 600,
-        color: activeTab === id ? 'var(--accent)' : 'var(--text-secondary)',
-        backgroundColor: 'transparent',
-        border: 'none',
-        borderBottom: `2px solid ${activeTab === id ? 'var(--accent)' : 'transparent'}`,
-        cursor: 'pointer',
-        transition: 'color 150ms, border-color 150ms',
-        letterSpacing: '-0.01em',
-      }}
-    >
-      {label}
-    </button>
-  );
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Page header */}
-      <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
-        <h2 style={{
-          fontFamily: 'var(--font-serif)', fontSize: 24, fontWeight: 700,
-          color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em',
-        }}>
-          Drug Combination Discovery
+    <div className="space-y-8">
+      {/* Hero & Instrument Purpose */}
+      <div className="border-b border-[#E5E5E0] pb-5">
+        <h2 className="font-serif text-3xl font-bold text-[#0F172A] tracking-tight">
+          Combination Analysis & Discovery
         </h2>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.6 }}>
-          Screen combinations against PrimeKG · Heterogeneous Graph Transformer prediction · Mechanistic attribution
+        <p className="text-sm text-[#475569] mt-1 max-w-3xl leading-relaxed">
+          Screen multi-drug combinations against heterogeneous knowledge graph topologies. Predict synergy or antagonism with calibrated confidence and extract load-bearing mechanistic pathways.
         </p>
       </div>
 
-      {/* Tab bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', gap: 0, overflow: 'visible' }}>
-        <TabBtn id="pair" label="Targeted Pair Analysis" />
-        <TabBtn id="search" label="Unbiased Discovery Search" />
+      {/* Mode Selector Tabs */}
+      <div className="flex border-b border-[#E5E5E0] gap-4 overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('pair');
+            setErrorMsg(null);
+          }}
+          className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'pair'
+              ? 'border-[#0D9488] text-[#0D9488]'
+              : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
+          }`}
+        >
+          Compound Pair Analysis (Targeted)
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('search');
+            setErrorMsg(null);
+          }}
+          className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'search'
+              ? 'border-[#0D9488] text-[#0D9488]'
+              : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
+          }`}
+        >
+          Unbiased Indication Search (Discovery)
+        </button>
       </div>
 
-      {/* Error */}
-      {errorMsg && <AlertNotice type="error" title="Notice">{errorMsg}</AlertNotice>}
+      {errorMsg && (
+        <AlertNotice type="error" title="Analysis Notice">
+          {errorMsg}
+        </AlertNotice>
+      )}
 
-      {/* Loading */}
+      {/* Loading Stage View */}
       {isLoading && (
-        <div style={{ paddingTop: 8, paddingBottom: 8 }}>
+        <div className="py-6">
           <LoadingStages
-            title={activeTab === 'pair' ? 'Evaluating Drug Combination' : 'Discovering Candidate Combinations'}
-            subtitle={activeTab === 'pair'
-              ? `Running GNN inference for ${drugA?.name ?? 'Drug A'} + ${drugB?.name ?? 'Drug B'} @ ${cellLine}`
-              : 'Traversing PrimeKG indication neighbors and ranking candidates'}
+            title={
+              activeTab === 'pair'
+                ? 'Evaluating Drug Combination'
+                : 'Discovering Candidate Combinations'
+            }
+            subtitle={
+              activeTab === 'pair'
+                ? `Running inference for ${drugA?.name || 'Drug A'} × ${drugB?.name || 'Drug B'} @ ${cellLine}`
+                : 'Traversing PrimeKG indication neighbors and ranking candidate combinations'
+            }
           />
         </div>
       )}
 
-      {/* Tab 1: Targeted Pair */}
+      {/* Tab 1: Targeted Pair Evaluation */}
       {!isLoading && activeTab === 'pair' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20 }} className="sm:block">
-          <div>
-            {/* Pair form */}
-            <form
-              onSubmit={handleAnalyzePair}
-              style={{
-                backgroundColor: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                padding: '20px 22px',
-                boxShadow: 'var(--shadow-xs)',
-                marginBottom: 16,
-              }}
-            >
-              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 14 }}>
-                Select compounds
-              </p>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <form onSubmit={handleAnalyzePair} className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-6 shadow-xs space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-end gap-3">
+                <DrugSelectInput
+                  label="Compound A"
+                  selectedDrug={drugA}
+                  onSelect={setDrugA}
+                  drugs={drugs}
+                  placeholder="Select or search Compound A..."
+                />
 
-              {/* Drug selectors */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'end', gap: 10, marginBottom: 16 }}>
-                <DrugSelectInput label="Compound A" selectedDrug={drugA} onSelect={setDrugA} drugs={drugs} />
-                <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 2 }}>
+                <div className="flex justify-center pb-1">
                   <button
                     type="button"
                     onClick={handleSwapDrugs}
                     disabled={!drugA && !drugB}
-                    style={{
-                      padding: '8px', borderRadius: 6,
-                      backgroundColor: 'var(--surface-subtle)',
-                      border: '1px solid var(--border)',
-                      cursor: 'pointer', color: 'var(--text-muted)',
-                      display: 'flex', alignItems: 'center',
-                      opacity: !drugA && !drugB ? 0.4 : 1,
-                    }}
-                    title="Swap drugs"
+                    className="p-2 border border-[#CBD5E1] rounded hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#0F172A] transition-colors disabled:opacity-40"
+                    title="Swap Compound A and Compound B"
                   >
-                    <ArrowLeftRight size={15} />
+                    <ArrowLeftRight className="w-4 h-4" />
                   </button>
                 </div>
-                <DrugSelectInput label="Compound B" selectedDrug={drugB} onSelect={setDrugB} drugs={drugs} />
+
+                <DrugSelectInput
+                  label="Compound B"
+                  selectedDrug={drugB}
+                  onSelect={setDrugB}
+                  drugs={drugs}
+                  placeholder="Select or search Compound B..."
+                />
               </div>
 
-              {/* Cell line + disease */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
-                <CellLineDropdown status={cellLineStatus} selectedCellLine={cellLine} onSelect={setCellLine} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <CellLineDropdown
+                  status={cellLineStatus}
+                  selectedCellLine={cellLine}
+                  onSelect={setCellLine}
+                />
+
                 <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 6 }}>
-                    Disease Context
-                    <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-muted)', marginLeft: 6 }}>
-                      optional
-                    </span>
+                  <label className="block text-xs font-semibold text-[#334155] uppercase tracking-wider mb-1.5">
+                    Indication Context (Optional)
                   </label>
                   <input
                     type="text"
                     value={diseaseContext}
                     onChange={(e) => setDiseaseContext(e.target.value)}
-                    placeholder="e.g. glioblastoma"
-                    style={{
-                      width: '100%', padding: '8px 12px',
-                      fontSize: 13, fontFamily: 'var(--font-sans)',
-                      backgroundColor: 'var(--surface)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 6, color: 'var(--text-primary)',
-                      outline: 'none',
-                    }}
-                    onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
-                    onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+                    placeholder="e.g. glioblastoma, breast cancer..."
+                    className="w-full bg-[#FFFFFF] border border-[#CBD5E1] rounded px-3 py-2 text-sm text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#0D9488]"
                   />
                 </div>
               </div>
 
-              {/* Submit */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div className="pt-2 flex justify-end">
                 <button
                   type="submit"
                   disabled={!drugA || !drugB || isLoading}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '9px 20px',
-                    backgroundColor: 'var(--accent)',
-                    border: 'none', borderRadius: 6,
-                    color: '#FFFFFF', fontSize: 13, fontWeight: 600,
-                    cursor: 'pointer',
-                    opacity: !drugA || !drugB ? 0.5 : 1,
-                    transition: 'opacity 150ms',
-                  }}
+                  className="px-6 py-2.5 bg-[#0D9488] hover:bg-[#0F766E] disabled:opacity-50 text-[#FFFFFF] rounded font-semibold text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-colors"
                 >
-                  <Play size={14} fill="currentColor" />
-                  Analyze Combination
+                  <Play className="w-4 h-4 fill-current" />
+                  Run Targeted Inference
                 </button>
               </div>
             </form>
 
-            {/* Benchmark presets */}
+            {/* Presets Panel */}
             <BenchmarkPresets onSelect={handleSelectPreset} />
           </div>
 
-          {/* Sidebar: model specs */}
-          <div style={{
-            backgroundColor: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: '18px',
-            boxShadow: 'var(--shadow-xs)',
-            height: 'fit-content',
-          }}>
-            <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 14 }}>
-              Model Pipeline
-            </p>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              {[
-                ['Architecture', 'HGT (Heterogeneous GNN)'],
-                ['Knowledge Base', 'PrimeKG Multimodal'],
-                ['Calibration', 'Temperature Scaling'],
-                ['Explanation', 'Gradient Edge Saliency'],
-                ['Verification', 'Dual Faithfulness Ablation'],
-                ['Literature', 'NCBI PubMed E-Utilities'],
-              ].map(([k, v]) => (
-                <tr key={k} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '7px 0', fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', paddingRight: 12 }}>{k}</td>
-                  <td style={{ padding: '7px 0', fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', textAlign: 'right' }}>{v}</td>
-                </tr>
-              ))}
-            </table>
-            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 14, lineHeight: 1.5 }}>
-              All predictions represent live GNN inference. No simulated data.
-            </p>
+          {/* Model Specification Info Card */}
+          <div className="space-y-4">
+            <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-5 shadow-xs space-y-3 font-mono text-xs">
+              <h3 className="font-sans font-bold text-sm text-[#0F172A] pb-2 border-b border-[#E5E5E0]">
+                Model Pipeline Specifications
+              </h3>
+              <div className="space-y-2">
+                <div className="flex justify-between py-1.5 border-b border-[#F1F5F9]">
+                  <span className="text-[#64748B]">Architecture:</span>
+                  <span className="font-semibold text-[#0F172A]">HGT (Heterogeneous GNN)</span>
+                </div>
+                <div className="flex justify-between py-1.5 border-b border-[#F1F5F9]">
+                  <span className="text-[#64748B]">Knowledge Base:</span>
+                  <span className="font-semibold text-[#0F172A]">PrimeKG (Multimodal)</span>
+                </div>
+                <div className="flex justify-between py-1.5 border-b border-[#F1F5F9]">
+                  <span className="text-[#64748B]">Calibration:</span>
+                  <span className="font-semibold text-[#0F172A]">Temperature Scaling (ECE)</span>
+                </div>
+                <div className="flex justify-between py-1.5 border-b border-[#F1F5F9]">
+                  <span className="text-[#64748B]">Explanation Engine:</span>
+                  <span className="font-semibold text-[#0D9488]">Gradient Edge Saliency</span>
+                </div>
+                <div className="flex justify-between py-1.5 border-b border-[#F1F5F9]">
+                  <span className="text-[#64748B]">Verification:</span>
+                  <span className="font-semibold text-[#059669]">Dual Faithfulness Ablation</span>
+                </div>
+                <div className="flex justify-between py-1.5">
+                  <span className="text-[#64748B]">Literature Link:</span>
+                  <span className="font-semibold text-[#B45309]">NCBI PubMed E-Utilities</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-4 text-xs text-[#64748B] leading-relaxed">
+              <span className="font-semibold text-[#0F172A] block mb-1">Scientific Integrity Guarantee:</span>
+              Predictions, probabilities, and attribution graphs represent live biocomputational evaluations. No simulated or mock data is generated.
+            </div>
           </div>
         </div>
       )}
 
-      {/* Tab 2: Discovery Search */}
+      {/* Tab 2: Discovery Search Mode */}
       {!isLoading && activeTab === 'search' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Search form */}
-          <div style={{
-            backgroundColor: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: '20px 22px',
-            boxShadow: 'var(--shadow-xs)',
-            maxWidth: 640,
-          }}>
+        <div className="space-y-6">
+          <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-6 shadow-xs max-w-3xl">
             <DiscoveryMode
               cellLineStatus={cellLineStatus}
               selectedCellLine={cellLine}
@@ -475,80 +356,140 @@ export const DiscoverPage: React.FC = () => {
             />
           </div>
 
-          {/* Results */}
+          {/* Discovery Results Table */}
           {searchResults && (
-            <div>
-              {/* Results header */}
-              <div style={{
-                display: 'flex', flexWrap: 'wrap', alignItems: 'center',
-                justifyContent: 'space-between', gap: 10, marginBottom: 12,
-              }}>
+            <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-6 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E5E5E0] pb-3 gap-2">
                 <div>
-                  <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    Results for "{searchResults.disease}"
+                  <h3 className="font-serif text-lg font-bold text-[#0F172A]">
+                    Ranked Discovery Results for '{searchResults.disease}'
                   </h3>
-                  <p style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: 3 }}>
-                    {searchResults.cell_line} · {searchResults.candidate_pool_size} candidates
-                    {searchResults.max_candidates_scored ? ` · ${searchResults.max_candidates_scored} pairs scored` : ''}
+                  <p className="text-xs text-[#64748B] font-mono mt-0.5">
+                    Context: {searchResults.cell_line} &bull; Candidate Pool: {searchResults.candidate_pool_size} compounds
+                    {searchResults.max_candidates_scored ? ` • Scored: ${searchResults.max_candidates_scored} pairs` : ''}
                   </p>
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div className="flex items-center gap-2 flex-wrap">
                   {searchResults.search_method && (
-                    <span style={{
-                      fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 600,
-                      backgroundColor: 'var(--accent-subtle)',
-                      border: '1px solid var(--accent-border)',
-                      color: 'var(--accent-text)',
-                      borderRadius: 4, padding: '4px 8px',
-                    }}>
+                    <span className="text-xs font-mono text-[#0D9488] bg-[#F0FDFA] border border-[#99F6E4] px-2.5 py-1 rounded font-semibold">
                       {searchResults.search_method === 'mcts'
-                        ? `MCTS · ${searchResults.n_simulations ?? 50} sims`
+                        ? `MCTS (${searchResults.n_simulations ?? 50} simulations, ${searchResults.n_pairs_scored ?? searchResults.max_candidates_scored ?? searchResults.results.length} pairs scored)`
                         : searchResults.search_method === 'beam'
-                        ? `Beam width=${searchResults.beam_width ?? 5}`
-                        : 'Greedy'
-                      }
+                        ? `Beam search (width=${searchResults.beam_width ?? 5}, pool=${searchResults.candidate_pool_size}, scored=${searchResults.max_candidates_scored ?? searchResults.results.length})`
+                        : `Greedy search (pool=${searchResults.candidate_pool_size}, scored=${searchResults.max_candidates_scored ?? searchResults.results.length})`}
                     </span>
                   )}
                   {searchResults.truncated && (
-                    <span style={{
-                      fontSize: 11, fontFamily: 'var(--font-mono)',
-                      backgroundColor: 'var(--warning-subtle)',
-                      border: '1px solid var(--warning-border)',
-                      color: 'var(--warning)',
-                      borderRadius: 4, padding: '4px 8px',
-                    }}>
-                      ⚠ Time budget reached
+                    <span className="text-xs font-mono text-[#B45309] bg-[#FFFBEB] border border-[#FDE68A] px-2.5 py-1 rounded font-semibold flex items-center gap-1">
+                      <span>⚠️</span> Time budget reached (truncated)
                     </span>
                   )}
-                  <span style={{
-                    fontSize: 11, fontFamily: 'var(--font-mono)',
-                    backgroundColor: 'var(--surface-subtle)',
-                    border: '1px solid var(--border)',
-                    color: 'var(--text-muted)',
-                    borderRadius: 4, padding: '4px 8px',
-                  }}>
-                    Top {searchResults.results.length}
+                  <span className="text-xs font-mono text-[#475569] bg-[#F1F5F9] border border-[#E2E8F0] px-2.5 py-1 rounded font-semibold">
+                    Top {searchResults.results.length} Pairs
                   </span>
                 </div>
               </div>
 
-              {/* Result cards */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="divide-y divide-[#E5E5E0]">
                 {searchResults.results.map((pair, idx) => (
-                  <SearchResultCard
+                  <div
                     key={`${pair.drug_a}_${pair.drug_b}_${idx}`}
-                    pair={pair}
-                    idx={idx}
-                    isInspecting={inspectingPairIdx === idx}
-                    searchMethod={searchResults.search_method}
-                    onInspect={() => handleSelectDiscoveredPair(pair, idx)}
-                  />
+                    className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-[#F8FAFC] px-3 rounded transition-colors"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs text-[#94A3B8] font-bold">
+                          #{pair.rank ?? idx + 1}
+                        </span>
+                        <h4 className="font-semibold text-sm text-[#0F172A]">
+                          {pair.drug_a_name} × {pair.drug_b_name}
+                        </h4>
+                        <Badge
+                          variant={
+                            pair.predicted_class === 'synergy'
+                              ? 'synergy'
+                              : pair.predicted_class === 'antagonism'
+                              ? 'antagonism'
+                              : 'additive'
+                          }
+                          size="sm"
+                        >
+                          {pair.predicted_class}
+                        </Badge>
+                        <ToxicityBadge
+                          hasKnownDdi={pair.ranking?.breakdown?.has_known_ddi}
+                          unknownRiskApplied={pair.ranking?.breakdown?.unknown_risk_applied}
+                          sideEffectOverlap={pair.ranking?.breakdown?.side_effect_overlap}
+                          toxicityPenalty={pair.ranking?.toxicity_penalty}
+                          size="sm"
+                          showDetails={true}
+                        />
+                        {(pair.search_method === 'mcts' || searchResults?.search_method === 'mcts') && pair.mcts_visits !== undefined && (
+                          <span
+                            title="Number of MCTS search visits to this pair during tree exploration (algorithmic exploration count, not a biological score)"
+                            className="text-[10px] font-mono text-[#64748B] bg-[#F8FAFC] border border-[#E2E8F0] px-1.5 py-0.5 rounded"
+                          >
+                            visits: {pair.mcts_visits}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[#475569] line-clamp-2 max-w-2xl leading-relaxed">
+                        {pair.explanation_text}
+                      </p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[#64748B] bg-[#F1F5F9] border border-[#E2E8F0] px-2 py-0.5 rounded">
+                          <Clock className="w-3 h-3 text-[#94A3B8]" />
+                          Faithfulness ablation not computed during batch search &bull; Click Inspect for full verification
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 shrink-0 font-mono text-xs">
+                      <div className="text-right">
+                        <span className="text-[10px] text-[#64748B] uppercase block font-sans">
+                          Composite V(pair)
+                        </span>
+                        <span className="font-bold text-sm text-[#0D9488]">
+                          {(pair.v_score ?? pair.ranking?.v_score ?? pair.score).toFixed(4)}
+                        </span>
+                        <div className="text-[10px] text-[#64748B] flex items-center justify-end gap-1.5 mt-0.5 font-mono">
+                          <span>p(syn): <strong className="text-[#059669]">{(pair.p_synergy ?? pair.ranking?.p_synergy ?? pair.score).toFixed(4)}</strong></span>
+                          {pair.ranking?.toxicity_penalty !== undefined && pair.ranking?.toxicity_penalty !== null && (
+                            <>
+                              <span>&bull;</span>
+                              <span title={`Toxicity penalty: ${pair.ranking.toxicity_penalty.toFixed(4)}`}>
+                                tox: <strong className={pair.ranking.toxicity_penalty > 0.4 ? 'text-[#DC2626]' : 'text-[#D97706]'}>{pair.ranking.toxicity_penalty.toFixed(3)}</strong>
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={inspectingPairIdx !== null}
+                        onClick={() => handleSelectDiscoveredPair(pair, idx)}
+                        className="px-3.5 py-2 bg-[#F1F5F9] hover:bg-[#0D9488] hover:text-[#FFFFFF] disabled:opacity-50 text-[#0F172A] rounded font-semibold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {inspectingPairIdx === idx ? (
+                          <span className="flex items-center gap-1.5">
+                            <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            Loading analysis...
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1.5">Inspect Analysis <ArrowRight className="w-3.5 h-3.5" /></span>
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Why Not diagnostic */}
+          {/* Why Not Drug X Diagnostic Agent */}
           <WhyNotSection
             disease={searchResults?.disease || searchDisease || diseaseContext || 'glioblastoma'}
             cellLine={searchResults?.cell_line || cellLine}

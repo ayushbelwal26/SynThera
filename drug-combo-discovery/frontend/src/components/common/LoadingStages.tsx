@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, CheckCircle2, Circle } from 'lucide-react';
+import { Loader2, CheckCircle2, CircleDashed } from 'lucide-react';
 
 const STAGES = [
   'Building biological context from PrimeKG',
-  'Tracing drug–target binding relationships',
+  'Tracing drug–target relationships',
   'Analyzing pathway interactions via Heterogeneous Graph Transformer',
   'Generating calibrated synergy / additive / antagonism prediction',
   'Constructing explanation subgraph via gradient backpropagation',
@@ -30,38 +30,18 @@ export const LoadingStages: React.FC<LoadingStagesProps> = ({
   }, []);
 
   return (
-    <div style={{
-      backgroundColor: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: 8,
-      padding: '24px',
-      maxWidth: 480,
-      margin: '0 auto',
-      boxShadow: 'var(--shadow-sm)',
-    }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 12,
-        paddingBottom: 16, borderBottom: '1px solid var(--border)',
-        marginBottom: 18,
-      }}>
-        <Loader2
-          size={18}
-          style={{ color: 'var(--accent)', flexShrink: 0, animation: 'spin 1s linear infinite' }}
-        />
+    <div className="bg-[#FFFFFF] border border-[#E5E5E0] rounded-lg p-6 max-w-xl mx-auto shadow-xs">
+      <div className="flex items-center gap-3 border-b border-[#E5E5E0] pb-4 mb-5">
+        <Loader2 className="w-5 h-5 text-[#0D9488] animate-spin shrink-0" />
         <div>
-          <h3 style={{
-            fontFamily: 'var(--font-serif)', fontSize: 16, fontWeight: 700,
-            color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em',
-          }}>
+          <h3 className="font-serif text-lg font-semibold text-[#0F172A]">
             {title}
           </h3>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>{subtitle}</p>
+          <p className="text-xs text-[#717784] mt-0.5">{subtitle}</p>
         </div>
       </div>
 
-      {/* Stage list */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="space-y-3">
         {STAGES.map((stage, idx) => {
           const isDone = idx < currentStage;
           const isCurrent = idx === currentStage;
@@ -70,45 +50,43 @@ export const LoadingStages: React.FC<LoadingStagesProps> = ({
           return (
             <div
               key={stage}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                opacity: isPending ? 0.35 : 1,
-                transition: 'opacity 300ms',
-              }}
+              className={`flex items-start gap-3 transition-opacity duration-300 ${
+                isPending ? 'opacity-40' : 'opacity-100'
+              }`}
             >
-              {isDone ? (
-                <CheckCircle2 size={15} style={{ color: 'var(--synergy)', flexShrink: 0 }} />
-              ) : isCurrent ? (
-                <Loader2 size={15} style={{ color: 'var(--accent)', flexShrink: 0, animation: 'spin 1s linear infinite' }} />
-              ) : (
-                <Circle size={15} style={{ color: 'var(--border-strong)', flexShrink: 0 }} />
-              )}
-              <span style={{
-                fontSize: 12,
-                color: isCurrent ? 'var(--text-primary)' : isDone ? 'var(--text-secondary)' : 'var(--text-muted)',
-                fontWeight: isCurrent ? 600 : 400,
-                flex: 1,
-              }}>
-                {stage}
-              </span>
-              <span style={{
-                fontSize: 10, fontFamily: 'var(--font-mono)',
-                color: 'var(--text-muted)',
-              }}>
-                {String(idx + 1).padStart(2, '0')}
+              <div className="mt-0.5 shrink-0">
+                {isDone ? (
+                  <CheckCircle2 className="w-4 h-4 text-[#059669]" />
+                ) : isCurrent ? (
+                  <Loader2 className="w-4 h-4 text-[#0D9488] animate-spin" />
+                ) : (
+                  <CircleDashed className="w-4 h-4 text-[#94A3B8]" />
+                )}
+              </div>
+              <div className="flex-1">
+                <span
+                  className={`text-xs ${
+                    isCurrent
+                      ? 'font-semibold text-[#0F172A]'
+                      : isDone
+                      ? 'text-[#334155]'
+                      : 'text-[#94A3B8]'
+                  }`}
+                >
+                  {stage}
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-[#94A3B8]">
+                0{idx + 1}
               </span>
             </div>
           );
         })}
       </div>
 
-      <div style={{
-        marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border)',
-        display: 'flex', justifyContent: 'space-between',
-        fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)',
-      }}>
-        <span>Heterogeneous Graph Transformer (PyG)</span>
-        <span>In-silico ablation active</span>
+      <div className="mt-6 pt-4 border-t border-[#F4F4F1] flex items-center justify-between text-[11px] text-[#717784]">
+        <span className="font-mono">Device: Heterogeneous Graph Transformer (PyG)</span>
+        <span className="font-mono">In-silico ablation active</span>
       </div>
     </div>
   );
