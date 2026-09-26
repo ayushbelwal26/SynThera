@@ -1,4 +1,3 @@
-import { FlaskConical, ChevronDown, Info } from "lucide-react";
 import type { CellLineRelevanceStatus } from "../../types/api";
 
 interface CellLineDropdownProps {
@@ -6,6 +5,7 @@ interface CellLineDropdownProps {
   selectedCellLine: string;
   onSelect: (cellLine: string) => void;
   disabled?: boolean;
+  label?: string;
 }
 
 export const CellLineDropdown: React.FC<CellLineDropdownProps> = ({
@@ -13,44 +13,35 @@ export const CellLineDropdown: React.FC<CellLineDropdownProps> = ({
   selectedCellLine,
   onSelect,
   disabled = false,
+  label = "Cell line",
 }) => {
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <label className="block text-xs font-semibold text-[#3A4D5C] uppercase tracking-wide">
-          Cell Line / Biological Context
-        </label>
-        <span className="text-[10px] font-mono text-[#6B7C8A]">
-          {status.cellLines.length} panel lines
+      <div className="flex items-center justify-between mb-1">
+        <label className="bench-label">{label}</label>
+        <span className="font-mono text-[10px] text-[#6B746C]">
+          {status.cellLines.length} lines
         </span>
       </div>
-
-      <div className="relative">
-        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-          <FlaskConical className="w-4 h-4 text-[#6B7C8A]" />
-        </div>
-        <select
-          value={selectedCellLine}
-          disabled={disabled}
-          onChange={(e) => onSelect(e.target.value)}
-          className="w-full pl-9 pr-10 py-2.5 bg-[#FFFFFF] border border-[#D0DCE6] focus:border-[#0D9488] focus:ring-1 focus:ring-[#0D9488] rounded-md text-sm font-mono text-[#1A2B3C] appearance-none outline-none cursor-pointer transition-all disabled:opacity-50"
-        >
-          {status.cellLines.map((cl) => (
-            <option key={cl} value={cl}>
-              {cl}
-            </option>
-          ))}
-        </select>
-        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-          <ChevronDown className="w-4 h-4 text-[#6B7C8A]" />
-        </div>
-      </div>
-
+      <select
+        value={selectedCellLine}
+        disabled={disabled}
+        onChange={(e) => onSelect(e.target.value)}
+        className="bench-input appearance-none cursor-pointer"
+      >
+        {status.cellLines.length === 0 && (
+          <option value="">No cell lines loaded</option>
+        )}
+        {status.cellLines.map((cl) => (
+          <option key={cl} value={cl}>
+            {cl}
+          </option>
+        ))}
+      </select>
       {status.filteringNote && (
-        <div className="mt-2 flex items-start gap-2 bg-[#EEF5F8] border border-[#E2EAF0] rounded p-2 text-[11px] text-[#5A6B7A]">
-          <Info className="w-3.5 h-3.5 text-[#6B7C8A] shrink-0 mt-0.5" />
-          <span>{status.filteringNote}</span>
-        </div>
+        <p className="mt-1.5 font-mono text-[10px] text-[#6B746C] leading-relaxed">
+          {status.filteringNote}
+        </p>
       )}
     </div>
   );

@@ -1,34 +1,60 @@
 import React from "react";
-import { NavLink } from "react-router-dom";
-import { Compass, Activity, BookOpen, Network } from "lucide-react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
+
+const links = [
+  { to: "/discover", mode: null as string | null, num: "01", label: "Bench" },
+  {
+    to: "/discover",
+    mode: "indication",
+    num: "02",
+    label: "Indication",
+  },
+  { to: "/evidence", mode: null, num: "03", label: "Literature" },
+  { to: "/graph", mode: null, num: "04", label: "Neighborhood" },
+];
 
 export const Navigation: React.FC = () => {
-  const links = [
-    { to: "/discover", label: "Discover & Query", icon: Compass },
-    { to: "/analysis", label: "Mechanistic Analysis", icon: Activity },
-    { to: "/evidence", label: "Literature Evidence", icon: BookOpen },
-    { to: "/graph", label: "Knowledge Graph Explorer", icon: Network },
-  ];
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const indicationMode = searchParams.get("mode") === "indication";
 
   return (
-    <nav className="flex items-center gap-1 border-b border-[#E5E2DC] bg-[#FFFEFB] px-6">
+    <nav className="flex flex-col gap-0.5 mt-6 flex-1" aria-label="Primary">
       {links.map((link) => {
-        const Icon = link.icon;
+        const isDiscover = link.to === "/discover";
+        const isActive = isDiscover
+          ? location.pathname.startsWith("/discover") &&
+            (link.mode === "indication" ? indicationMode : !indicationMode) &&
+            !location.pathname.startsWith("/analysis")
+          : location.pathname.startsWith(link.to);
+
+        const href =
+          link.mode === "indication"
+            ? "/discover?mode=indication"
+            : link.to === "/discover"
+              ? "/discover"
+              : link.to;
+
         return (
-          <NavLink
-            key={link.to}
-            to={link.to}
-            className={({ isActive }) =>
-              `flex items-center gap-2 py-2.5 px-3 text-xs tracking-wide border-b-2 transition-all ${
-                isActive
-                  ? "border-[#2F6B5E] text-[#25564B] bg-[#E8F0ED]/50 font-semibold"
-                  : "border-transparent text-[#6B746F] hover:text-[#1C2421] hover:bg-[#F3F1EC] font-medium"
-              }`
-            }
+          <Link
+            key={`${link.num}-${link.label}`}
+            to={href}
+            aria-current={isActive ? "page" : undefined}
+            className={`flex items-baseline gap-2.5 px-4 py-2 text-[13px] border-l-2 ${
+              isActive
+                ? "border-[#1A535C] bg-[#F5F5ED]/90 text-[#1A1F1C] font-medium"
+                : "border-transparent text-[#4A524C] hover:bg-[#F5F5ED]/45 hover:text-[#1A1F1C]"
+            }`}
           >
-            <Icon className="w-4 h-4" />
-            <span>{link.label}</span>
-          </NavLink>
+            <span
+              className={`id-text w-5 shrink-0 text-[11px] ${
+                isActive ? "text-[#1A535C]" : ""
+              }`}
+            >
+              {link.num}
+            </span>
+            <span className="font-sans">{link.label}</span>
+          </Link>
         );
       })}
     </nav>

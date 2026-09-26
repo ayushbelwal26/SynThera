@@ -51,49 +51,41 @@ export const BenchmarkPresets: React.FC<BenchmarkPresetsProps> = ({
   disabled = false,
 }) => {
   return (
-    <div className="syn-card rounded-md p-4">
-      <div className="flex items-center gap-2 mb-2.5">
-        <Bookmark className="w-3.5 h-3.5 text-[#2F6B5E]" />
-        <h4 className="text-xs font-semibold text-[#1C2421] uppercase tracking-wide">
-          Curated Benchmark Reference Pairs
-        </h4>
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <Bookmark className="w-3.5 h-3.5 text-[#1A535C]" />
+        <span className="bench-label">Reference pairs</span>
       </div>
-      <p className="text-xs text-[#7A827C] mb-3">
-        Load gold-standard oncology combinations with experimental multi-drug
-        synergy, additive, or antagonism profiles:
-      </p>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+      <div className="divide-y divide-[#CFC9BC] border-y border-[#CFC9BC]">
         {BENCHMARKS.map((preset) => (
           <button
             key={preset.id}
             type="button"
             disabled={disabled}
             onClick={() => onSelect(preset)}
-            className="text-left p-2.5 bg-[#F3F1EC] hover:bg-[#EEEBE5] border border-[#E5E2DC] hover:border-[#D8D5CE] rounded transition-all group disabled:opacity-50"
+            className="w-full text-left py-3 px-0.5 hover:bg-[#E8EDE0]/35 disabled:opacity-50 flex items-baseline justify-between gap-3"
           >
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-semibold text-xs text-[#1C2421] group-hover:text-[#2F6B5E] transition-colors">
-                {preset.name}
+            <div className="min-w-0">
+              <span className="font-serif text-[15px] text-[#1A1F1C]">
+                {preset.drugA.name} + {preset.drugB.name}
               </span>
-              <span
-                className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-medium ${
-                  preset.expectedClass === "synergy"
-                    ? "bg-[#E8F0ED] text-[#2F6B5E]"
-                    : preset.expectedClass === "antagonism"
-                      ? "bg-[#F7EBEB] text-[#A84B4B]"
-                      : "bg-[#F7F0E4] text-[#9A712F]"
-                }`}
-              >
-                {preset.expectedClass}
+              <span className="block meta-text mt-0.5">
+                <span className="id-text">{preset.cellLine}</span>
+                <span className="text-[#A8A294]"> · </span>
+                {preset.indication}
               </span>
             </div>
-            <div className="flex items-center justify-between text-[10px] text-[#6B746F] font-mono">
-              <span>{preset.indication}</span>
-              <span className="bg-[#E5E2DC] px-1 rounded text-[#3D4742]">
-                {preset.cellLine}
-              </span>
-            </div>
+            <span
+              className={`text-[12px] shrink-0 capitalize ${
+                preset.expectedClass === "synergy"
+                  ? "text-[#1A535C]"
+                  : preset.expectedClass === "antagonism"
+                    ? "text-[#A84B4B]"
+                    : "text-[#8B7355]"
+              }`}
+            >
+              {preset.expectedClass}
+            </span>
           </button>
         ))}
       </div>

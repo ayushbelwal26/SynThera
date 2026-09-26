@@ -1,7 +1,6 @@
-import React from "react";
-import { BookOpen, ExternalLink, FileText } from "lucide-react";
-import { useApp } from "../services/AppContext";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useApp } from "../services/AppContext";
 import type { LiteratureCitation } from "../types/api";
 
 interface AugmentedCitation extends LiteratureCitation {
@@ -12,171 +11,129 @@ interface AugmentedCitation extends LiteratureCitation {
 export const EvidencePage: React.FC = () => {
   const navigate = useNavigate();
   const { currentPrediction, recentPredictions } = useApp();
+  const [filter, setFilter] = useState("");
 
-  // Aggregate all literature from current and recent evaluations
-  const allCitations = React.useMemo(() => {
+  const allCitations = useMemo(() => {
     const list: AugmentedCitation[] = [];
-    if (currentPrediction && currentPrediction.supporting_literature) {
-      currentPrediction.supporting_literature.forEach((c) => {
-        list.push({
-          ...c,
-          combination: `${currentPrediction.drug_a_name} × ${currentPrediction.drug_b_name}`,
-          cellLine: currentPrediction.cell_line,
-        });
-      });
+    const seen = new Set<string>();
+
+    const push = (c: LiteratureCitation, combo: string, cell: string) => {
+      const key = `${c.pmid}_${combo}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      list.push({ ...c, combination: combo, cellLine: cell });
+    };
+
+    if (currentPrediction?.supporting_literature) {
+      currentPrediction.supporting_literature.forEach((c) =>
+        push(
+          c,
+          `${currentPrediction.drug_a_name} + ${currentPrediction.drug_b_name}`,
+          currentPrediction.cell_line,
+        ),
+      );
     }
     recentPredictions.forEach((p) => {
-      if (p !== currentPrediction && p.supporting_literature) {
-        p.supporting_literature.forEach((c) => {
-          list.push({
-            ...c,
-            combination: `${p.drug_a_name} × ${p.drug_b_name}`,
-            cellLine: p.cell_line,
-          });
-        });
-      }
+      p.supporting_literature?.forEach((c) =>
+        push(c, `${p.drug_a_name} + ${p.drug_b_name}`, p.cell_line),
+      );
     });
     return list;
   }, [currentPrediction, recentPredictions]);
 
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="border-b border-[#E5E2DC] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-[#9A712F]" />
-            <h2 className="text-2xl font-semibold text-[#1C2421]">
-              Scientific Evidence & Literature Catalog
-            </h2>
-          </div>
-          <p className="text-xs text-[#7A827C] mt-0.5">
-            Retrieved PubMed citations cross-referencing model-predicted drug
-            synergy mechanisms with published biological experimental literature
-          </p>
-        </div>
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return allCitations;
+    return allCitations.filter(
+      (c) =>
+        c.pmid?.toLowerCase().includes(q) ||
+        c.title?.toLowerCase().includes(q) ||
+        c.journal?.toLowerCase().includes(q) ||
+        c.combination.toLowerCase().includes(q) ||
+        c.snippet?.toLowerCase().includes(q) ||
+        c.match_reason?.toLowerCase().includes(q),
+    );
+  }, [allCitations, filter]);
 
-        {/* Provenance Badge */}
-        <div className="flex items-center gap-2 text-xs font-mono">
-          <span className="bg-[#F5EFE4] text-[#7A5A28] border border-[#E5D4A8] px-2.5 py-1 rounded font-semibold">
-            NCBI E-Utilities Verified
+  return (
+    <div>
+      <p className="page-kicker">Literature</p>
+      <h2 className="page-title">Matched PubMed records</h2>
+      <p className="page-lede">
+        Each entry is tied to the pair record whose retained edges it matched.
+        Filter by drug, gene, PMID, or phrase.
+      </p>
+
+      <div className="mt-5 bench-panel">
+        <div className="flex items-end justify-between gap-4">
+          <div className="flex-1">
+            <label className="bench-label block mb-1">Filter</label>
+            <input
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="e.g. EGFR, taxane, 30341984"
+              className="bench-input"
+            />
+          </div>
+          <span className="meta-text shrink-0 pb-1.5">
+            {filtered.length} {filtered.length === 1 ? "entry" : "entries"}
           </span>
         </div>
       </div>
 
-      {/* Trust & Provenance Card */}
-      <div className="syn-card rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-[#1C2421] uppercase tracking-wide mb-1.5">
-          Dual Validation Methodology
-        </h3>
-        <p className="text-xs text-[#5A635E] leading-normal mb-3">
-          Synthera establishes clinical confidence by triangulating
-          computational graph attribution against peer-reviewed experimental
-          publications:
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-          <div className="p-3 bg-[#E8F0ED] border border-[#B5CFC6] rounded">
-            <span className="font-semibold text-[#25564B] block mb-1">
-              1. In-Silico Mechanistic Attribution
-            </span>
-            <p className="text-[#3D4742] leading-normal">
-              Gradient backpropagation isolates specific molecular paths (e.g.
-              drug-target bindings, pathway cascades) explaining why the model
-              predicted synergy over additive outcomes.
-            </p>
-          </div>
-          <div className="p-3 bg-[#F5EFE4] border border-[#E5D4A8] rounded">
-            <span className="font-semibold text-[#7A5A28] block mb-1">
-              2. Independent PubMed Triangulation
-            </span>
-            <p className="text-[#3D4742] leading-normal">
-              NCBI ESearch and ESummary dynamically query the biomedical
-              literature for the identified targets and indications, confirming
-              whether the computational axis has experimental precedent.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Evidence Table / Cards */}
-      {allCitations.length === 0 ? (
-        <div className="syn-card rounded-lg p-12 text-center">
-          <FileText className="w-10 h-10 text-[#8A918C] mx-auto mb-3" />
-          <h3 className="text-lg font-semibold text-[#1C2421] mb-1">
-            No supporting literature was retrieved for this relationship.
-          </h3>
-          <p className="text-xs text-[#6B746F] max-w-md mx-auto mb-5 leading-normal">
-            Run a prediction in the query instrument to retrieve verified
-            citations for candidate combinations from NCBI PubMed.
+      {filtered.length === 0 ? (
+        <div className="py-8">
+          <p className="meta-text mb-3">
+            {allCitations.length === 0
+              ? "No literature indexed yet. Score a pair on the Bench to retrieve PubMed matches."
+              : "No entries match this filter."}
           </p>
-          <button
-            type="button"
-            onClick={() => navigate("/discover")}
-            className="px-4 py-2 bg-[#2F6B5E] hover:bg-[#25564B] text-[#FFFEFB] rounded text-xs font-semibold inline-flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            Launch Query Instrument
-          </button>
+          {allCitations.length === 0 && (
+            <button
+              type="button"
+              onClick={() => navigate("/discover")}
+              className="bench-btn"
+            >
+              Open bench
+            </button>
+          )}
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-[#1C2421]">
-              Retrieved Citations ({allCitations.length})
-            </h3>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {allCitations.map((cite, idx) => (
-              <div
-                key={`${cite.pmid}_${idx}`}
-                className="syn-card hover:border-[#B8B4AB] rounded-lg p-4 transition-all flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono text-[#9A712F] bg-[#F5EFE4] px-2 py-0.5 rounded font-bold">
-                      PMID: {cite.pmid}
-                    </span>
-                    <span className="text-xs font-mono text-[#6B746F]">
-                      {cite.year}
-                    </span>
-                  </div>
-
-                  <h4 className="text-base font-semibold text-[#1C2421] mb-2 leading-snug">
-                    {cite.title}
-                  </h4>
-
-                  <p className="text-xs text-[#6B746F] mb-2">
-                    First Author:{" "}
-                    <strong className="text-[#3D4742]">
-                      {cite.first_author || "First Author et al."}
-                    </strong>
-                  </p>
-
-                  <div className="inline-flex items-center gap-1.5 text-[11px] font-mono bg-[#F3F1EC] text-[#5A635E] border border-[#E5E2DC] px-2 py-1 rounded">
-                    <span>Associated Combination:</span>
-                    <strong className="text-[#1C2421]">
-                      {cite.combination}
-                    </strong>
-                    <span>({cite.cellLine})</span>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-[#EEEBE5] flex items-center justify-between">
-                  <span className="text-[11px] text-[#8A918C] font-mono">
-                    National Library of Medicine
-                  </span>
-                  <a
-                    href={cite.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[#2F6B5E] hover:text-[#25564B] font-semibold text-xs transition-colors"
-                  >
-                    Read on PubMed <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
+        <div className="mt-2 divide-y divide-[#CFC9BC] border-y border-[#CFC9BC]">
+          {filtered.map((cite, idx) => (
+            <article
+              key={`${cite.pmid}_${idx}`}
+              className="py-4 grid grid-cols-1 md:grid-cols-12 gap-3"
+            >
+              <div className="md:col-span-3 space-y-0.5">
+                <a
+                  href={cite.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="id-text text-[#1A1F1C] underline underline-offset-2 decoration-[#CFC9BC] hover:decoration-[#1A535C]"
+                >
+                  PMID {cite.pmid}
+                </a>
+                {cite.journal && <div className="meta-text">{cite.journal}</div>}
+                {cite.year && <div className="meta-text">{cite.year}</div>}
+                <div className="meta-text pt-1">{cite.combination}</div>
               </div>
-            ))}
-          </div>
+              <div className="md:col-span-9">
+                <h3 className="font-serif text-[16px] text-[#1A1F1C] font-semibold leading-snug">
+                  {cite.title}
+                </h3>
+                {cite.snippet && (
+                  <p className="mt-1.5 text-[13px] text-[#4A524C] italic leading-relaxed">
+                    “{cite.snippet}”
+                  </p>
+                )}
+                {cite.match_reason && (
+                  <p className="meta-text mt-1.5">{cite.match_reason}</p>
+                )}
+              </div>
+            </article>
+          ))}
         </div>
       )}
     </div>

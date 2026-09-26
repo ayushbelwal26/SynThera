@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { Loader2, CheckCircle2, CircleDashed } from "lucide-react";
 
 const STAGES = [
   "Building biological context from PrimeKG",
   "Tracing drug–target relationships",
-  "Analyzing pathway interactions via Heterogeneous Graph Transformer",
-  "Generating calibrated synergy / additive / antagonism prediction",
-  "Constructing explanation subgraph via gradient backpropagation",
-  "Conducting dual faithfulness checks (necessity & sufficiency)",
-  "Retrieving supporting literature from NCBI PubMed",
+  "Analyzing pathway interactions via HGT",
+  "Generating calibrated class probabilities",
+  "Constructing explanation subgraph",
+  "Running faithfulness ablation",
+  "Retrieving PubMed literature",
 ];
 
 interface LoadingStagesProps {
@@ -17,8 +16,8 @@ interface LoadingStagesProps {
 }
 
 export const LoadingStages: React.FC<LoadingStagesProps> = ({
-  title = "Inference & Biological Attribution in Progress",
-  subtitle = "Evaluating compound combination through graph neural network pipeline",
+  title = "Inference in progress",
+  subtitle = "Heterogeneous Graph Transformer over PrimeKG",
 }) => {
   const [currentStage, setCurrentStage] = useState(0);
 
@@ -30,16 +29,15 @@ export const LoadingStages: React.FC<LoadingStagesProps> = ({
   }, []);
 
   return (
-    <div className="syn-card rounded-lg p-6 max-w-xl mx-auto">
-      <div className="flex items-center gap-3 border-b border-[#E5E2DC] pb-4 mb-5">
-        <Loader2 className="w-5 h-5 text-[#2F6B5E] animate-spin shrink-0" />
-        <div>
-          <h3 className="text-lg font-semibold text-[#1C2421]">{title}</h3>
-          <p className="text-xs text-[#7A827C] mt-0.5">{subtitle}</p>
-        </div>
+    <div className="max-w-xl border border-[#CFC9BC] p-5">
+      <div className="border-b border-[#CFC9BC] pb-4 mb-4">
+        <h3 className="font-serif text-[20px] text-[#1A1F1C] font-semibold">
+          {title}
+        </h3>
+        <p className="font-mono text-[13px] text-[#6B746C] mt-1">{subtitle}</p>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         {STAGES.map((stage, idx) => {
           const isDone = idx < currentStage;
           const isCurrent = idx === currentStage;
@@ -48,45 +46,32 @@ export const LoadingStages: React.FC<LoadingStagesProps> = ({
           return (
             <div
               key={stage}
-              className={`flex items-start gap-3 transition-opacity duration-300 ${
-                isPending ? "opacity-40" : "opacity-100"
+              className={`flex items-baseline gap-3 ${
+                isPending ? "opacity-35" : ""
               }`}
             >
-              <div className="mt-0.5 shrink-0">
-                {isDone ? (
-                  <CheckCircle2 className="w-4 h-4 text-[#3D7A6C]" />
-                ) : isCurrent ? (
-                  <Loader2 className="w-4 h-4 text-[#2F6B5E] animate-spin" />
-                ) : (
-                  <CircleDashed className="w-4 h-4 text-[#8A918C]" />
+              <span className="font-mono text-[12px] text-[#6B746C] w-5">
+                {String(idx + 1).padStart(2, "0")}
+              </span>
+              <span
+                className={`text-[14px] flex-1 ${
+                  isCurrent
+                    ? "text-[#1A1F1C] font-medium"
+                    : isDone
+                      ? "text-[#4A524C]"
+                      : "text-[#6B746C]"
+                }`}
+              >
+                {stage}
+                {isCurrent && (
+                  <span className="font-mono text-[12px] text-[#1A535C] ml-2">
+                    …
+                  </span>
                 )}
-              </div>
-              <div className="flex-1">
-                <span
-                  className={`text-xs ${
-                    isCurrent
-                      ? "font-semibold text-[#1C2421]"
-                      : isDone
-                        ? "text-[#3D4742]"
-                        : "text-[#8A918C]"
-                  }`}
-                >
-                  {stage}
-                </span>
-              </div>
-              <span className="text-[10px] font-mono text-[#8A918C]">
-                0{idx + 1}
               </span>
             </div>
           );
         })}
-      </div>
-
-      <div className="mt-4 pt-4 border-t border-[#F4F4F1] flex items-center justify-between text-[11px] text-[#7A827C]">
-        <span className="font-mono">
-          Device: Heterogeneous Graph Transformer (PyG)
-        </span>
-        <span className="font-mono">In-silico ablation active</span>
       </div>
     </div>
   );
