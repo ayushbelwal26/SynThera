@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import gsap from "gsap";
 import { useApp } from "../services/AppContext";
 import { predictCombination } from "../services/api";
@@ -34,6 +34,7 @@ export const BenchPage: React.FC = () => {
     currentPrediction,
   } = useApp();
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [drugA, setDrugA] = useState<Drug | null>(null);
   const [drugB, setDrugB] = useState<Drug | null>(null);
   const [cellLine, setCellLine] = useState<string>("T98G");
@@ -42,6 +43,22 @@ export const BenchPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Pre-select Drug A if navigated from Command Palette (?drug=DB...)
+  useEffect(() => {
+    const drugParam = searchParams.get("drug");
+    if (drugParam && drugs.length > 0) {
+      const matched = drugs.find(
+        (d) =>
+          d.id.toLowerCase() === drugParam.toLowerCase() ||
+          d.name.toLowerCase() === drugParam.toLowerCase(),
+      );
+      if (matched) {
+        setDrugA(matched);
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [searchParams, drugs, setSearchParams]);
 
   // GSAP animation refs
   const headerRef = useRef<HTMLDivElement>(null);
@@ -463,9 +480,10 @@ export const BenchPage: React.FC = () => {
                     <span>PubMed Literature</span>
                   </div>
                   <p className="text-[11.5px] text-[#60747A]">
-                    {activeResult.supporting_literature?.length
-                      ? `${activeResult.supporting_literature.length} peer-reviewed clinical citations co-indexed.`
-                      : "Indexed in scientific evidence repository."}
+                    {(activeResult.literature?.citations?.length ||
+                      activeResult.supporting_literature?.length)
+                      ? `${activeResult.literature?.citations?.length || activeResult.supporting_literature?.length} peer-reviewed clinical citations co-indexed.`
+                      : "No co-occurring PubMed clinical citations indexed."}
                   </p>
                 </div>
               </div>
@@ -499,7 +517,7 @@ export const BenchPage: React.FC = () => {
           )}
 
           {/* Session History Register */}
-          {recentPredictions.length > 1 && (
+          {recentPredictions.length > 0 && (
             <div className="st-panel p-5 space-y-3">
               <div className="flex items-center justify-between border-b border-[#20343C] pb-2">
                 <span className="font-medium text-[13.5px] text-[#F1F5F2] flex items-center gap-2">

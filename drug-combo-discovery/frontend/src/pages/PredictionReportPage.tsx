@@ -9,6 +9,7 @@ import { FaithfulnessCard } from "../components/analysis/FaithfulnessCard";
 import { ToxicityCard } from "../components/analysis/ToxicityCard";
 import { LiteratureSection } from "../components/analysis/LiteratureSection";
 import { AnalysisChatPanel } from "../components/analysis/AnalysisChatPanel";
+import { NodeDetailModal } from "../components/analysis/NodeDetailModal";
 import {
   FileText,
   Printer,
@@ -24,22 +25,30 @@ export const PredictionReportPage: React.FC = () => {
   const { currentPrediction, setCurrentPrediction, addRecentPrediction } = useApp();
 
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [report, setReport] = useState<PredictionResult | null>(currentPrediction);
   const [viewMode, setViewMode] = useState<"graph" | "table">("graph");
+  const [selectedEntity, setSelectedEntity] = useState<{
+    type: "node" | "edge";
+    data: any;
+  } | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatWidth, setChatWidth] = useState(380);
 
   useEffect(() => {
     if (
       id &&
+      id !== "active" &&
       (!currentPrediction ||
         `${currentPrediction.drug_a}_${currentPrediction.drug_b}_${currentPrediction.cell_line}` !==
           id)
     ) {
       const parts = id.split("_");
       if (parts.length >= 3) {
-        const [drugA, drugB, cellLine] = parts;
+        const [drugA, drugB, ...rest] = parts;
+        const cellLine = rest.join("_");
         setIsLoading(true);
+        setErrorMsg(null);
         predictCombination({
           drug_a: drugA,
           drug_b: drugB,
@@ -53,6 +62,7 @@ export const PredictionReportPage: React.FC = () => {
           })
           .catch((err) => {
             console.error("Failed to load prediction report:", err);
+            setErrorMsg(err.message || "Failed to load prediction report from backend.");
             setIsLoading(false);
           });
       }
@@ -84,7 +94,8 @@ export const PredictionReportPage: React.FC = () => {
           Prediction Report Not Found
         </h3>
         <p className="text-[13px] text-[#94A5A6]">
-          No combination record is currently loaded. Please evaluate a pair on the Bench first.
+          {errorMsg ||
+            "No combination record is currently loaded. Please evaluate a pair on the Bench first."}
         </p>
         <Link to="/bench" className="st-btn-primary inline-flex">
           <ArrowLeft size={14} />
@@ -253,6 +264,7 @@ export const PredictionReportPage: React.FC = () => {
               drugAName={report.drug_a_name}
               drugBName={report.drug_b_name}
               explanationText={report.explanation_text}
+              onSelectEntity={setSelectedEntity}
             />
           </div>
         ) : (
@@ -299,6 +311,12 @@ export const PredictionReportPage: React.FC = () => {
           drugBName={report.drug_b_name}
         />
       </section>
+
+      {/* Entity / Edge Detail Inspector Modal */}
+      <NodeDetailModal
+        entity={selectedEntity}
+        onClose={() => setSelectedEntity(null)}
+      />
 
       {/* Interactive Tool-Calling Assistant Drawer */}
       <AnalysisChatPanel

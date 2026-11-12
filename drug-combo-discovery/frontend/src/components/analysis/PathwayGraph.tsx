@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
   ReactFlow,
   Controls,
@@ -31,27 +31,27 @@ const BiologicalNode = ({ data }: { data: any }) => {
     { badgeBg: string; badgeText: string; borderColor: string; glow: string }
   > = {
     drug: {
-      badgeBg: "bg-[#173D32]/10",
-      badgeText: "text-[#173D32] font-bold",
-      borderColor: "border-[#173D32]",
-      glow: "shadow-xs",
+      badgeBg: "bg-[#00D6A0]/15",
+      badgeText: "text-[#00D6A0] font-bold",
+      borderColor: "border-[#00D6A0]",
+      glow: "shadow-[0_0_12px_rgba(0,214,160,0.2)]",
     },
     protein: {
-      badgeBg: "bg-[#B78B54]/15",
-      badgeText: "text-[#B78B54] font-semibold",
-      borderColor: "border-[#B78B54]",
+      badgeBg: "bg-[#C7A76A]/15",
+      badgeText: "text-[#C7A76A] font-semibold",
+      borderColor: "border-[#C7A76A]",
       glow: "shadow-none",
     },
     pathway: {
-      badgeBg: "bg-[#8B7BA8]/15",
-      badgeText: "text-[#8B7BA8] font-semibold",
-      borderColor: "border-[#8B7BA8]",
+      badgeBg: "bg-[#35C9D5]/15",
+      badgeText: "text-[#35C9D5] font-semibold",
+      borderColor: "border-[#35C9D5]",
       glow: "shadow-none",
     },
     disease: {
-      badgeBg: "bg-[#318575]/15",
-      badgeText: "text-[#318575] font-semibold",
-      borderColor: "border-[#318575]",
+      badgeBg: "bg-[#E05260]/15",
+      badgeText: "text-[#E05260] font-semibold",
+      borderColor: "border-[#E05260]",
       glow: "shadow-none",
     },
   };
@@ -201,10 +201,18 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
       });
     });
 
+    const maxImportance = Math.max(
+      ...(topEdges || []).map((e) => Math.abs(e.importance || 0)),
+      1e-6,
+    );
+
     const edgesList: Edge[] = (topEdges || []).map((e, idx) => {
-      const importanceNorm = Math.max(0.1, Math.min(1.0, e.importance));
+      const importanceNorm = Math.max(
+        0.1,
+        Math.min(1.0, Math.abs(e.importance || 0) / maxImportance),
+      );
       const strokeWidth = 1.5 + importanceNorm * 2.5;
-      const isHighImportance = importanceNorm > 0.6;
+      const isHighImportance = importanceNorm > 0.5;
 
       return {
         id: `edge-${idx}`,
@@ -245,8 +253,13 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
     return { initialNodes: nodesList, initialEdges: edgesList };
   }, [topEdges, drugAName, drugBName, showLabels]);
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  useEffect(() => {
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+  }, [initialNodes, initialEdges, setNodes, setEdges]);
 
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -286,19 +299,19 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
         <div className="flex items-center gap-3 flex-wrap text-[11px] text-[var(--color-text-muted)]">
           {/* Legend pills */}
           <span className="flex items-center gap-1.5 font-mono">
-            <span className="w-2 h-2 rounded-full bg-[var(--color-accent)] shadow-[0_0_6px_var(--color-accent)]" />
+            <span className="w-2 h-2 rounded-full bg-[#00D6A0] shadow-[0_0_6px_#00D6A0]" />
             Drug
           </span>
           <span className="flex items-center gap-1.5 font-mono">
-            <span className="w-2 h-2 rounded-full bg-[#E3BA78]" />
+            <span className="w-2 h-2 rounded-full bg-[#C7A76A]" />
             Protein
           </span>
           <span className="flex items-center gap-1.5 font-mono">
-            <span className="w-2 h-2 rounded-full bg-[#8B7BA8]" />
+            <span className="w-2 h-2 rounded-full bg-[#35C9D5]" />
             Pathway
           </span>
           <span className="flex items-center gap-1.5 font-mono">
-            <span className="w-2 h-2 rounded-full bg-[var(--color-accent)] opacity-70" />
+            <span className="w-2 h-2 rounded-full bg-[#E05260]" />
             Disease
           </span>
 

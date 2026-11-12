@@ -1,613 +1,867 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { useGSAP } from "@gsap/react";
 import { LandingNav } from "../components/landing/LandingNav";
-import { HeroMolecularScene } from "../components/landing/HeroMolecularScene";
-import { MolecularConvergenceCanvas } from "../components/landing/MolecularConvergenceCanvas";
-import { BiologicalUniverseCanvas } from "../components/landing/BiologicalUniverseCanvas";
+import { StaticMolecularFallback } from "../components/landing/StaticMolecularFallback";
+import {
+  INITIAL_CINEMATIC_STATE,
+  type CinematicMotionState,
+} from "../components/landing/cinematicMotionTypes";
 import {
   ArrowRight,
-  ArrowUpRight,
-  FlaskConical,
+  Microscope,
   Target,
-  BookOpen,
-  GitFork,
-  Database,
-  Cpu,
-  ShieldCheck,
-  Activity,
+  FileSearch,
+  Network,
   CheckCircle2,
+  ShieldCheck,
+  GitBranch,
+  ChevronRight,
 } from "lucide-react";
 
-gsap.registerPlugin(ScrollTrigger);
+gsap.registerPlugin(ScrollTrigger, useGSAP);
+
+const CinematicMolecularCanvas = lazy(
+  () => import("../components/landing/CinematicMolecularCanvas")
+);
 
 export const LandingPage: React.FC = () => {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const motionStateRef = useRef<CinematicMotionState>({ ...INITIAL_CINEMATIC_STATE });
+  const requestRenderRef = useRef<(() => void) | null>(null);
 
-  // Section Refs for GSAP timelines
-  const heroEyebrowRef = useRef<HTMLDivElement>(null);
-  const heroTitleRef = useRef<HTMLHeadingElement>(null);
-  const heroSubRef = useRef<HTMLParagraphElement>(null);
-  const heroCtasRef = useRef<HTMLDivElement>(null);
-  const heroVisualRef = useRef<HTMLDivElement>(null);
+  const [reducedMotion, setReducedMotion] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
 
-  const [convergenceProgress, setConvergenceProgress] = useState(0.2);
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth < 768;
+  });
 
+  // Track viewport width (for mobile particle density) & reduced-motion preference cleanly
   useEffect(() => {
-    const ctx = gsap.context(() => {
-      // ── 1. Hero Entrance Timeline ──
-      const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+    if (typeof window === "undefined") return;
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-      tl.fromTo(
-        heroEyebrowRef.current,
-        { opacity: 0, y: 15 },
-        { opacity: 1, y: 0, duration: 0.6, delay: 0.1 },
-      )
-        .fromTo(
-          heroTitleRef.current,
-          { opacity: 0, y: 25 },
-          { opacity: 1, y: 0, duration: 0.8 },
-          "-=0.4",
-        )
-        .fromTo(
-          heroSubRef.current,
-          { opacity: 0, y: 20 },
-          { opacity: 1, y: 0, duration: 0.7 },
-          "-=0.5",
-        )
-        .fromTo(
-          heroCtasRef.current,
-          { opacity: 0, y: 15 },
-          { opacity: 1, y: 0, duration: 0.6 },
-          "-=0.4",
-        )
-        .fromTo(
-          heroVisualRef.current,
-          { opacity: 0, scale: 0.95 },
-          { opacity: 1, scale: 1, duration: 1.0, ease: "power2.out" },
-          "-=0.7",
-        );
+    const updateMode = () => {
+      setReducedMotion(motionQuery.matches);
+      setIsMobile(window.innerWidth < 768);
+    };
 
-      // ── 2. ScrollTrigger Convergence Section ──
-      ScrollTrigger.create({
-        trigger: "#problem",
-        start: "top center",
-        end: "bottom center",
-        scrub: 1,
-        onUpdate: (self) => {
-          setConvergenceProgress(self.progress);
+    updateMode();
+    motionQuery.addEventListener("change", updateMode);
+    window.addEventListener("resize", updateMode);
+
+    return () => {
+      motionQuery.removeEventListener("change", updateMode);
+      window.removeEventListener("resize", updateMode);
+    };
+  }, []);
+
+  // Coordinated single-timeline scroll choreography driving the persistent particle DNA system
+  useGSAP(
+    () => {
+      const container = pageRef.current;
+      if (!container) return;
+
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduced) {
+        return;
+      }
+
+      // Reset to Hero resting pose before timeline initialization
+      Object.assign(motionStateRef.current, INITIAL_CINEMATIC_STATE);
+      requestRenderRef.current?.();
+
+      // Master continuous scroll-controlled timeline driving the GPGPU particle swarm
+      const tl = gsap.timeline({
+        defaults: { ease: "none" },
+        scrollTrigger: {
+          trigger: container,
+          start: "top top",
+          end: "bottom bottom",
+          scrub: 1.1,
+          invalidateOnRefresh: true,
+          onUpdate: () => {
+            requestRenderRef.current?.();
+          },
         },
       });
 
-      // ── 3. Staggered Methodology Reveal ──
-      gsap.fromTo(
-        ".methodology-card",
-        { opacity: 0, y: 30 },
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.6,
-          stagger: 0.15,
-          ease: "power2.out",
-          scrollTrigger: {
-            trigger: "#methodology",
-            start: "top 75%",
-          },
-        },
-      );
-    }, containerRef);
+      // Scene 01 -> Scene 02 (The Paradox / Problem):
+      // As user scrolls down, DNA double-helix smoothly dissolves and merges into the ambient particle swarm.
+      // Position remains centered and tranquil without jarring lateral jumping.
+      tl.to(motionStateRef.current, {
+        helixBlend: 1.0,
+        objX: 0,
+        objY: 0,
+        objZ: 0,
+        rotX: 0.08,
+        rotY: 0.28,
+        rotZ: -0.06,
+        scale: 1.02,
+        camX: 0,
+        camY: 0,
+        camZ: 102,
+        lookX: 0,
+        lookY: 0,
+        lookZ: 0,
+        turbulence: 0.04,
+        stiffness: 1.9,
+        bloomIntensity: 0.44,
+        brightness: 0.95,
+        duration: 0.22,
+      });
 
-    return () => ctx.revert();
-  }, []);
+      // Scene 02 -> Scene 03A (Methodology):
+      // Continues as a serene, space-filling ambient field of drifting particles that lets content shine
+      tl.to(motionStateRef.current, {
+        helixBlend: 1.0,
+        objX: 0,
+        objY: 0,
+        objZ: 0,
+        rotX: 0.06,
+        rotY: 0.58,
+        rotZ: 0.02,
+        scale: 1.03,
+        camX: 0,
+        camY: 0,
+        camZ: 100,
+        lookX: 0,
+        lookY: 0,
+        lookZ: 0,
+        turbulence: 0.06,
+        stiffness: 1.8,
+        bloomIntensity: 0.42,
+        brightness: 0.92,
+        duration: 0.22,
+      });
+
+      // Scene 03A -> Scene 03B (Biological Universe):
+      // Particles softly expand into an expansive, gentle biological cosmic cloud
+      tl.to(motionStateRef.current, {
+        helixBlend: 1.0,
+        objX: 0,
+        objY: 0,
+        objZ: -2,
+        rotX: 0.08,
+        rotY: 0.9,
+        rotZ: -0.04,
+        scale: 1.05,
+        camX: 0,
+        camY: 0,
+        camZ: 98,
+        lookX: 0,
+        lookY: 0,
+        lookZ: 0,
+        turbulence: 0.12,
+        stiffness: 1.6,
+        bloomIntensity: 0.45,
+        brightness: 0.92,
+        duration: 0.2,
+      });
+
+      // Scene 03B -> Scene 04 (GNN Intelligence):
+      // Peaceful biological particle currents framing the model cards
+      tl.to(motionStateRef.current, {
+        helixBlend: 1.0,
+        objX: 0,
+        objY: 0,
+        objZ: -4,
+        rotX: 0.06,
+        rotY: 1.2,
+        rotZ: 0.0,
+        scale: 1.0,
+        camX: 0,
+        camY: 0,
+        camZ: 102,
+        lookX: 0,
+        lookY: 0,
+        lookZ: 0,
+        turbulence: 0.04,
+        stiffness: 2.0,
+        bloomIntensity: 0.4,
+        brightness: 0.88,
+        duration: 0.18,
+      });
+
+      // Scene 04 -> Scene 05 (Platform Preview & Closing):
+      // Camera pulls back gently into the deep midnight background
+      tl.to(motionStateRef.current, {
+        helixBlend: 1.0,
+        objX: 0,
+        objY: 4,
+        objZ: -15,
+        rotX: 0.05,
+        rotY: 1.5,
+        rotZ: 0.0,
+        scale: 0.88,
+        camX: 0,
+        camY: 0,
+        camZ: 118,
+        lookX: 0,
+        lookY: 0,
+        lookZ: 0,
+        turbulence: 0.02,
+        stiffness: 2.2,
+        bloomIntensity: 0.28,
+        brightness: 0.45,
+        duration: 0.18,
+      });
+
+      // Ensure ScrollTrigger recalculates cleanly once fonts and layout settle
+      const refreshTimer = window.setTimeout(() => {
+        ScrollTrigger.refresh();
+      }, 250);
+
+      return () => {
+        window.clearTimeout(refreshTimer);
+      };
+    },
+    { scope: pageRef, dependencies: [reducedMotion] }
+  );
 
   return (
     <div
-      ref={containerRef}
-      className="min-h-screen bg-[#05090D] text-[#F1F5F2] font-sans selection:bg-[#00D6A0]/20 selection:text-[#F1F5F2] overflow-x-hidden relative"
+      ref={pageRef}
+      className="relative min-h-screen bg-[#020409] text-[#F1F5F2] selection:bg-[#22D3EE]/30 selection:text-[#F1F5F2]"
     >
-      {/* ── Fixed Floating Landing Navigation ── */}
+      {/* Persistent Single-Subject Holographic Particle DNA Scene */}
+      <div className="hero-canvas-layer fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        {reducedMotion ? (
+          <StaticMolecularFallback />
+        ) : (
+          <Suspense fallback={<StaticMolecularFallback />}>
+            <CinematicMolecularCanvas
+              motionStateRef={motionStateRef}
+              requestRenderRef={requestRenderRef}
+              isMobile={isMobile}
+            />
+          </Suspense>
+        )}
+      </div>
+
+      {/* Global Navigation */}
       <LandingNav />
 
-      {/* ═══════════════════════════════════════════════════════════
-          SECTION 1: HERO — CINEMATIC FULL VIEWPORT
-      ═══════════════════════════════════════════════════════════ */}
-      <section className="relative min-h-screen flex items-center pt-24 pb-16 px-6 lg:px-12 max-w-7xl mx-auto overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center w-full">
-          {/* Left Hero Narrative */}
-          <div className="lg:col-span-7 space-y-7 z-10">
-            <div ref={heroEyebrowRef} className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#00D6A0] shadow-[0_0_8px_rgba(0,214,160,0.8)]" />
-              <span className="font-mono text-[11px] uppercase tracking-widest text-[#00D6A0] font-semibold">
-                Computational Oncology / Drug Discovery
-              </span>
-            </div>
+      {/* ====================================================================
+          SCENE 01 — HERO (0–18%)
+          Centered DNA Double Helix as Primary Subject; Space-Filling Nebula Clouds
+          Typography centered with high-clarity scrim (matches reference design)
+      ==================================================================== */}
+      <section className="relative z-10 flex min-h-screen flex-col items-center justify-center overflow-hidden pt-28 pb-20">
+        {/* Soft centered dark radial scrim ensuring crystal-clear typography contrast */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(62% 62% at 50% 50%, rgba(2, 4, 9, 0.78) 0%, rgba(2, 4, 9, 0.38) 60%, rgba(2, 4, 9, 0) 100%)",
+          }}
+        />
 
-            <h1
-              ref={heroTitleRef}
-              className="font-serif text-[42px] sm:text-[56px] lg:text-[68px] leading-[1.08] font-normal tracking-tight text-[#F1F5F2]"
-            >
-              Discover the <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00D6A0] via-[#35C9D5] to-[#8AE8CC]">
-                connections
-              </span>{" "}
-              that change the future of cancer research.
-            </h1>
-
-            <p
-              ref={heroSubRef}
-              className="font-sans text-[16px] sm:text-[18px] text-[#94A5A6] max-w-xl leading-relaxed"
-            >
-              Exploring drug combinations through biological knowledge graphs, Heterogeneous
-              Graph Transformers, and clinically verified peer-reviewed literature.
-            </p>
-
-            <div
-              ref={heroCtasRef}
-              className="flex flex-wrap items-center gap-4 pt-3 font-sans"
-            >
-              <Link
-                to="/bench"
-                className="st-btn-primary !py-3.5 !px-7 text-[14px] font-medium group"
-              >
-                <span>Explore SynThera</span>
-                <ArrowRight
-                  size={16}
-                  className="group-hover:translate-x-1 transition-transform"
-                />
-              </Link>
-              <a
-                href="#problem"
-                className="st-btn-ghost !py-3.5 !px-6 text-[14px]"
-              >
-                Discover the Science
-              </a>
-            </div>
-
-            {/* Quick Scientific Trust Badges */}
-            <div className="pt-6 border-t border-[#20343C]/40 flex flex-wrap items-center gap-6 font-mono text-[11px] text-[#60747A]">
-              <span className="flex items-center gap-1.5">
-                <Database size={12} className="text-[#35C9D5]" />
-                PrimeKG Biological Network
-              </span>
-              <span>•</span>
-              <span className="flex items-center gap-1.5">
-                <Cpu size={12} className="text-[#00D6A0]" />
-                Leave-Drugs-Out Cold GNN
-              </span>
-              <span>•</span>
-              <span className="flex items-center gap-1.5">
-                <ShieldCheck size={12} className="text-[#C7A76A]" />
-                In-Silico Faithfulness
-              </span>
-            </div>
+        <div className="relative mx-auto flex w-full max-w-5xl flex-col items-center px-6 text-center lg:px-10">
+          <div className="mb-7 inline-flex items-center gap-2.5 rounded-full border border-[#20343C] bg-[#0B141A]/85 px-4 py-1.5 backdrop-blur-md shadow-sm">
+            <span className="h-2 w-2 rounded-full bg-[#00D6A0] animate-pulse" />
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8AE8CC]">
+              Oncology Computational Pharmacology
+            </span>
           </div>
 
-          {/* Right Hero Interactive 3D Molecular Canvas */}
-          <div
-            ref={heroVisualRef}
-            className="lg:col-span-5 h-[480px] lg:h-[620px] w-full relative"
-          >
-            <HeroMolecularScene />
-            {/* Interactive hint badge */}
-            <div className="absolute bottom-4 right-4 pointer-events-none bg-[#101C23]/80 backdrop-blur-xs border border-[#20343C] px-3 py-1 rounded-full text-[10.5px] font-mono text-[#60747A]">
-              Interactive WebGL Molecule · Drag to orbit
-            </div>
+          <h1 className="max-w-4xl text-4xl font-semibold leading-[1.08] tracking-tight text-[#F1F5F2] sm:text-5xl md:text-6xl lg:text-[66px]">
+            Discover the connections that change the future of cancer research.
+          </h1>
+
+          <p className="mt-7 max-w-2xl text-base leading-relaxed text-[#94A5A6] sm:text-lg">
+            SynThera unifies inductive graph neural networks over PrimeKG with
+            evidence-grounded literature synthesis to discover actionable
+            therapeutic drug combinations.
+          </p>
+
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+            <Link
+              to="/bench"
+              className="st-btn-primary inline-flex items-center gap-2.5 rounded-lg px-7 py-3.5 text-sm font-semibold shadow-lg shadow-[#00D6A0]/15"
+            >
+              Explore Platform <ArrowRight size={16} />
+            </Link>
+            <a
+              href="#methodology"
+              className="st-btn-ghost inline-flex items-center gap-2 rounded-lg bg-[#05090D]/70 px-6 py-3.5 text-sm font-semibold backdrop-blur-md border border-[#20343C]/80 hover:border-[#35C9D5]/60 hover:text-[#E8F8FF] transition-all"
+            >
+              See How It Works
+            </a>
+          </div>
+
+          <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-3 border-t border-[#20343C]/50 pt-7 text-xs font-medium text-[#60747A]">
+            <span className="flex items-center gap-2">
+              <ShieldCheck size={14} className="text-[#00D6A0]" />
+              PrimeKG Biological Network
+            </span>
+            <span className="flex items-center gap-2">
+              <GitBranch size={14} className="text-[#35C9D5]" />
+              Leave-Drugs-Out Cold GNN
+            </span>
+            <span className="flex items-center gap-2">
+              <CheckCircle2 size={14} className="text-[#00D6A0]" />
+              In-Silico Faithfulness
+            </span>
+          </div>
+
+          {/* Centered Scroll Indicator */}
+          <div className="mt-12 flex flex-col items-center gap-1.5 opacity-60 hover:opacity-100 transition-opacity">
+            <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-[#8AE8CC]">
+              Scroll to Explore
+            </span>
+            <ChevronRight size={14} className="rotate-90 text-[#35C9D5] animate-bounce" />
           </div>
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════════════════════
-          SECTION 2: THE PROBLEM — "ONE DRUG TELLS ONLY PART..."
-      ═══════════════════════════════════════════════════════════ */}
+      {/* ====================================================================
+          SCENE 02 — THE THERAPEUTIC PARADOX (#problem)
+          Subject glides toward center-left; content shifts right in asymmetric rhythm
+      ==================================================================== */}
       <section
         id="problem"
-        className="py-24 px-6 lg:px-12 max-w-7xl mx-auto border-t border-[#20343C]/60"
+        className="relative z-10 flex min-h-screen items-center border-t border-[#20343C]/35 py-28 lg:py-36"
       >
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-          <div className="lg:col-span-6 space-y-6">
-            <span className="section-label">The Therapeutic Paradox</span>
-            <h2 className="font-serif text-[36px] sm:text-[46px] leading-tight text-[#F1F5F2]">
-              One drug tells only part of the story.
-            </h2>
-            <p className="text-[16px] text-[#94A5A6] leading-relaxed">
-              Monotherapy in oncology frequently encounters compensatory signaling pathways,
-              metabolic bypasses, and acquired therapeutic resistance.
-            </p>
-            <p className="text-[14px] text-[#60747A] leading-relaxed">
-              When two compounds are administered concurrently, their molecular targets interact across
-              cellular cascades. SynThera maps these latent synergies—revealing where combined
-              intervention induces potent synthetic lethality while minimizing toxic redundancy.
-            </p>
-            <div className="grid grid-cols-2 gap-4 pt-2 font-mono text-xs">
-              <div className="p-4 rounded-xl bg-[#091218] border border-[#20343C]">
-                <div className="text-[#00D6A0] font-bold text-[18px]">17,000+</div>
-                <div className="text-[#60747A] mt-0.5">PrimeKG Target Phenotypes</div>
-              </div>
-              <div className="p-4 rounded-xl bg-[#091218] border border-[#20343C]">
-                <div className="text-[#35C9D5] font-bold text-[18px]">37,700+</div>
-                <div className="text-[#60747A] mt-0.5">Cold Benchmark Pairs</div>
-              </div>
-            </div>
-          </div>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(58% 65% at 76% 52%, rgba(5, 9, 13, 0.86) 0%, rgba(5, 9, 13, 0.42) 60%, rgba(5, 9, 13, 0) 100%)",
+          }}
+        />
 
-          <div className="lg:col-span-6 h-[440px] rounded-2xl border border-[#20343C] bg-[#091218] overflow-hidden relative shadow-2xl">
-            <MolecularConvergenceCanvas progress={convergenceProgress} />
-            <div className="absolute top-4 left-4 font-mono text-[11px] text-[#60747A] bg-[#101C23]/90 px-3 py-1.5 rounded-lg border border-[#20343C]">
-              Scroll to observe compound target convergence
+        <div className="relative mx-auto grid w-full max-w-7xl grid-cols-1 gap-12 px-6 lg:grid-cols-12 lg:px-10">
+          {/* Negative space on the left lets the rotating molecular cleft breathe */}
+          <div className="hidden lg:col-span-5 lg:block" />
+
+          <div className="lg:col-span-7">
+            <div className="rounded-2xl border border-[#20343C]/80 bg-[#070E14]/82 p-8 shadow-2xl backdrop-blur-md sm:p-11">
+              <div className="section-label mb-3">01 · The Therapeutic Paradox</div>
+              <h2 className="text-3xl font-semibold tracking-tight text-[#F1F5F2] sm:text-4xl lg:text-[42px]">
+                One drug tells only part of the story.
+              </h2>
+
+              <p className="mt-6 text-base leading-relaxed text-[#94A5A6]">
+                Cancer thrives on redundant signaling pathways and adaptive bypass
+                circuits. Traditional single-agent therapies often trigger acquired
+                resistance within months.
+              </p>
+              <p className="mt-4 text-base leading-relaxed text-[#94A5A6]">
+                Yet screening every candidate pair across cellular models is
+                combinatorially intractable. Most neural models memorize training
+                compounds rather than generalizing to unseen drugs or targets.
+              </p>
+
+              <div className="mt-9 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="rounded-xl border border-[#20343C] bg-[#0B141B]/90 p-5">
+                  <div className="font-mono text-2xl font-bold text-[#00D6A0]">
+                    17,000+
+                  </div>
+                  <div className="mt-1 text-xs font-medium uppercase tracking-wider text-[#94A5A6]">
+                    PrimeKG Target Phenotypes
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#20343C] bg-[#0B141B]/90 p-5">
+                  <div className="font-mono text-2xl font-bold text-[#35C9D5]">
+                    37,700+
+                  </div>
+                  <div className="mt-1 text-xs font-medium uppercase tracking-wider text-[#94A5A6]">
+                    Cold Benchmark Pairs
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════════════════════
-          SECTION 3: HOW SYNTHERA WORKS — 4 CORE STAGES
-      ═══════════════════════════════════════════════════════════ */}
+      {/* ====================================================================
+          SCENE 03A — DISCOVERY PROCESS (#methodology)
+          Camera focuses close on the ligand-binding cleft on the left;
+          4 methodology pillars cascade along the right rail
+      ==================================================================== */}
       <section
         id="methodology"
-        className="py-24 px-6 lg:px-12 max-w-7xl mx-auto border-t border-[#20343C]/60 space-y-16"
+        className="relative z-10 border-t border-[#20343C]/35 py-28 lg:py-36"
       >
-        <div className="text-center max-w-2xl mx-auto space-y-3">
-          <span className="section-label">End-to-End Methodology</span>
-          <h2 className="font-serif text-[36px] sm:text-[46px] text-[#F1F5F2]">
-            From molecular relationships to computational discovery.
-          </h2>
-          <p className="text-[15px] text-[#94A5A6]">
-            Four interconnected research modules designed for oncology scientists, medicinal chemists, and translational biologists.
-          </p>
-        </div>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(90deg, rgba(5, 9, 13, 0.15) 0%, rgba(5, 9, 13, 0.65) 48%, rgba(5, 9, 13, 0.9) 100%)",
+          }}
+        />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {/* Stage 01 */}
-          <div className="methodology-card st-panel p-6 space-y-4 hover:border-[#00D6A0]/60 transition-all flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[22px] font-bold text-[#00D6A0]">01</span>
-                <FlaskConical size={18} className="text-[#00D6A0]" />
-              </div>
-              <h3 className="font-serif text-[20px] text-[#F1F5F2]">
-                Drug Pair Analysis
-              </h3>
-              <p className="text-[13px] text-[#94A5A6] leading-relaxed">
-                Evaluate two candidate compounds with calibrated GNN synergy probabilities,
-                ablation faithfulness metrics, and multi-objective value scoring.
+        <div className="relative mx-auto grid w-full max-w-7xl grid-cols-1 gap-12 px-6 lg:grid-cols-12 lg:px-10">
+          {/* Left column anchors the section title sparsely above the zoomed binding site */}
+          <div className="lg:col-span-5 lg:sticky lg:top-32 lg:self-start">
+            <div className="rounded-2xl border border-[#20343C]/70 bg-[#05090D]/72 p-6 backdrop-blur-md">
+              <div className="section-label mb-3">02 · End-to-End Methodology</div>
+              <h2 className="text-3xl font-semibold tracking-tight text-[#F1F5F2] sm:text-4xl">
+                Four connected modules for translational discovery.
+              </h2>
+              <p className="mt-4 text-sm leading-relaxed text-[#94A5A6]">
+                As paired drug scaffolds converge around shared oncogenic hubs,
+                each module interrogates complementary structural, topological,
+                and clinical evidence layers.
               </p>
             </div>
-            <Link
-              to="/bench"
-              className="pt-4 border-t border-[#20343C] text-[12px] font-mono text-[#00D6A0] flex items-center justify-between hover:underline"
-            >
-              <span>Launch Bench</span>
-              <ArrowRight size={13} />
-            </Link>
           </div>
 
-          {/* Stage 02 */}
-          <div className="methodology-card st-panel p-6 space-y-4 hover:border-[#35C9D5]/60 transition-all flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[22px] font-bold text-[#35C9D5]">02</span>
-                <Target size={18} className="text-[#35C9D5]" />
-              </div>
-              <h3 className="font-serif text-[20px] text-[#F1F5F2]">
-                Indication Discovery
-              </h3>
-              <p className="text-[13px] text-[#94A5A6] leading-relaxed">
-                Traverse PrimeKG disease neighborhoods to score and rank candidate combinations
-                using Beam Search or Monte Carlo Tree Search (MCTS).
-              </p>
-            </div>
-            <Link
-              to="/indication"
-              className="pt-4 border-t border-[#20343C] text-[12px] font-mono text-[#35C9D5] flex items-center justify-between hover:underline"
-            >
-              <span>Explore Indications</span>
-              <ArrowRight size={13} />
-            </Link>
-          </div>
+          {/* Right rail: clean architectural module stack */}
+          <div className="space-y-5 lg:col-span-7">
+            {[
+              {
+                num: "01",
+                icon: Microscope,
+                color: "#00D6A0",
+                title: "Drug Pair Analysis",
+                desc: "Score synergy probability, selectivity, and toxicity risk for any candidate drug pair in an explicit oncology cell context.",
+                route: "/bench",
+              },
+              {
+                num: "02",
+                icon: Target,
+                color: "#35C9D5",
+                title: "Indication Discovery",
+                desc: "Identify optimal drug partners and responsive tumor cell lines for an anchor therapeutic agent via global candidate sweeps.",
+                route: "/indication",
+              },
+              {
+                num: "03",
+                icon: FileSearch,
+                color: "#8AE8CC",
+                title: "Scientific Evidence",
+                desc: "Synthesize mechanistic hypotheses and PubMed clinical support with strict citation grounding verification.",
+                route: "/literature",
+              },
+              {
+                num: "04",
+                icon: Network,
+                color: "#C7A76A",
+                title: "Biological Neighborhoods",
+                desc: "Traverse shared target proteins, pathway crosstalk, and topological bridges inside PrimeKG knowledge graphs.",
+                route: "/neighborhood",
+              },
+            ].map((stage) => {
+              const Icon = stage.icon;
+              return (
+                <Link
+                  key={stage.num}
+                  to={stage.route}
+                  className="group block rounded-2xl border border-[#20343C] bg-[#081016]/85 p-7 backdrop-blur-md transition-colors hover:border-[#35C9D5]/60 hover:bg-[#0D1820]/90"
+                >
+                  <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-start gap-5">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#20343C] bg-[#0D1A22]">
+                        <Icon size={20} style={{ color: stage.color }} />
+                      </div>
+                      <div>
+                        <span className="font-mono text-[11px] font-bold tracking-widest text-[#60747A]">
+                          STAGE {stage.num}
+                        </span>
+                        <h3 className="mt-1 text-xl font-semibold text-[#F1F5F2] transition-colors group-hover:text-[#00D6A0]">
+                          {stage.title}
+                        </h3>
+                        <p className="mt-2.5 text-sm leading-relaxed text-[#94A5A6]">
+                          {stage.desc}
+                        </p>
+                      </div>
+                    </div>
 
-          {/* Stage 03 */}
-          <div className="methodology-card st-panel p-6 space-y-4 hover:border-[#C7A76A]/60 transition-all flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[22px] font-bold text-[#C7A76A]">03</span>
-                <BookOpen size={18} className="text-[#C7A76A]" />
-              </div>
-              <h3 className="font-serif text-[20px] text-[#F1F5F2]">
-                Scientific Evidence
-              </h3>
-              <p className="text-[13px] text-[#94A5A6] leading-relaxed">
-                Automatically query and cite peer-reviewed clinical studies from NCBI PubMed,
-                matching retained mechanistic edges to verified publications.
-              </p>
-            </div>
-            <Link
-              to="/literature"
-              className="pt-4 border-t border-[#20343C] text-[12px] font-mono text-[#C7A76A] flex items-center justify-between hover:underline"
-            >
-              <span>View PubMed Evidence</span>
-              <ArrowRight size={13} />
-            </Link>
-          </div>
-
-          {/* Stage 04 */}
-          <div className="methodology-card st-panel p-6 space-y-4 hover:border-[#8AE8CC]/60 transition-all flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[22px] font-bold text-[#8AE8CC]">04</span>
-                <GitFork size={18} className="text-[#8AE8CC]" />
-              </div>
-              <h3 className="font-serif text-[20px] text-[#F1F5F2]">
-                Biological Neighborhoods
-              </h3>
-              <p className="text-[13px] text-[#94A5A6] leading-relaxed">
-                Interactive knowledge graph navigation across multi-relational drug, target,
-                enzymatic, and oncological phenotype connections.
-              </p>
-            </div>
-            <Link
-              to="/neighborhood"
-              className="pt-4 border-t border-[#20343C] text-[12px] font-mono text-[#8AE8CC] flex items-center justify-between hover:underline"
-            >
-              <span>Open Knowledge Graph</span>
-              <ArrowRight size={13} />
-            </Link>
+                    <div className="inline-flex shrink-0 items-center gap-1.5 self-start font-mono text-xs font-semibold text-[#35C9D5] sm:mt-1">
+                      Open <ChevronRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════════════════════
-          SECTION 4: THE BIOLOGICAL UNIVERSE — 3D GRAPH CONSTELLATION
-      ═══════════════════════════════════════════════════════════ */}
+      {/* ====================================================================
+          SCENE 03B — PRIMEKG TOPOLOGICAL SPACE (#universe)
+          Expansive center framing letting the rotating protein-ligand structure breathe
+      ==================================================================== */}
       <section
         id="universe"
-        className="py-24 px-6 lg:px-12 max-w-7xl mx-auto border-t border-[#20343C]/60 space-y-8"
+        className="relative z-10 flex min-h-screen flex-col justify-between border-t border-[#20343C]/35 py-24 lg:py-32"
       >
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div>
-            <span className="section-label">PrimeKG Topological Space</span>
-            <h2 className="font-serif text-[36px] sm:text-[46px] text-[#F1F5F2] mt-1">
-              Biology is a network. <br />
-              Discovery starts with its connections.
+        {/* Soft vignette only around the upper and lower edges so center stays luminous */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(5, 9, 13, 0.78) 0%, rgba(5, 9, 13, 0.12) 45%, rgba(5, 9, 13, 0.12) 60%, rgba(5, 9, 13, 0.85) 100%)",
+          }}
+        />
+
+        <div className="relative mx-auto w-full max-w-7xl px-6 lg:px-10">
+          <div className="max-w-2xl rounded-2xl border border-[#20343C]/65 bg-[#05090D]/72 p-7 backdrop-blur-md">
+            <div className="section-label mb-3">03 · PrimeKG Topological Space</div>
+            <h2 className="text-3xl font-semibold tracking-tight text-[#F1F5F2] sm:text-4xl lg:text-5xl">
+              Biology is a network. Discovery starts with its connections.
             </h2>
           </div>
-          <p className="text-[14px] text-[#94A5A6] max-w-md font-sans">
-            Hover over nodes in the interactive constellation below to inspect biological entity taxonomy:
-            Drugs (Emerald), Targets (Gold), Pathways (Cyan), and Diseases (Ruby).
-          </p>
         </div>
 
-        <div className="h-[520px] rounded-2xl border border-[#20343C] bg-[#091218] overflow-hidden relative shadow-2xl">
-          <BiologicalUniverseCanvas />
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════════════════════
-          SECTION 5: THE INTELLIGENCE BEHIND DISCOVERY
-      ═══════════════════════════════════════════════════════════ */}
-      <section
-        id="intelligence"
-        className="py-24 px-6 lg:px-12 max-w-7xl mx-auto border-t border-[#20343C]/60 space-y-12"
-      >
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-          <div className="lg:col-span-6 space-y-6">
-            <span className="section-label">Rigorous Generalization</span>
-            <h2 className="font-serif text-[36px] sm:text-[44px] text-[#F1F5F2] leading-tight">
-              Beyond isolated predictions.
-            </h2>
-            <p className="text-[15px] text-[#94A5A6] leading-relaxed">
-              Most combination models rely on transductive pair-splitting, creating massive data leakage
-              by testing pairs of drugs already seen during training.
+        <div className="relative mx-auto mt-64 w-full max-w-7xl px-6 lg:mt-80 lg:px-10">
+          <div className="ml-auto max-w-xl rounded-2xl border border-[#20343C]/75 bg-[#060C11]/82 p-7 backdrop-blur-md">
+            <p className="text-base leading-relaxed text-[#94A5A6]">
+              SynThera maps compound perturbation profiles onto multi-relational
+              biological subgraphs—connecting drugs, protein targets, pathway
+              cascades, and cellular phenotypes in a unified latent manifold.
             </p>
-            <p className="text-[14px] text-[#60747A] leading-relaxed">
-              SynThera enforces strict <strong>Cold-Drug (Leave-Drugs-Out)</strong> inductive splitting.
-              A held-out 15% of compounds are never seen during training, ensuring that predicted
-              synergy reflects true biological generalization across PrimeKG biomedical networks.
-            </p>
-
-            <div className="space-y-2.5 pt-2 font-mono text-xs">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-[#091218] border border-[#20343C]">
-                <CheckCircle2 size={16} className="text-[#00D6A0] shrink-0" />
-                <span>Inductive leave-drugs-out cold evaluation protocol</span>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-[#091218] border border-[#20343C]">
-                <CheckCircle2 size={16} className="text-[#00D6A0] shrink-0" />
-                <span>Multi-objective ranking penalized by known DDI and side-effect overlap</span>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-[#091218] border border-[#20343C]">
-                <CheckCircle2 size={16} className="text-[#00D6A0] shrink-0" />
-                <span>In-silico sufficiency & necessity graph edge ablation verification</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Interactive Metric Architecture Block */}
-          <div className="lg:col-span-6 st-panel p-8 space-y-6">
-            <div className="border-b border-[#20343C] pb-4 flex items-center justify-between">
-              <div>
-                <span className="text-[10.5px] font-mono text-[#00D6A0] uppercase tracking-wider block">
-                  Model Benchmark Highlights
-                </span>
-                <h4 className="font-serif text-[20px] text-[#F1F5F2] mt-0.5">
-                  SynergyGNN Cold Inductive Metric Suite
-                </h4>
-              </div>
-              <span className="font-mono text-[11px] px-2.5 py-1 rounded bg-[#14242B] text-[#35C9D5]">
-                PrimeKG + DrugComb
+            <div className="mt-5 flex flex-wrap gap-3 font-mono text-[11px] uppercase tracking-wider text-[#8AE8CC]">
+              <span className="rounded-md border border-[#20343C] bg-[#0B141A] px-3 py-1">
+                Structural Motif Clefts
+              </span>
+              <span className="rounded-md border border-[#20343C] bg-[#0B141A] px-3 py-1">
+                Pathway Bridge Distance
+              </span>
+              <span className="rounded-md border border-[#20343C] bg-[#0B141A] px-3 py-1">
+                Cell-Line Gene Context
               </span>
             </div>
+          </div>
+        </div>
+      </section>
 
-            <div className="grid grid-cols-2 gap-4 font-mono">
-              <div className="p-4 rounded-xl bg-[#091218] border border-[#20343C]">
-                <span className="text-[10px] text-[#60747A] uppercase block">Test Cold AUROC</span>
-                <span className="text-[26px] font-bold text-[#00D6A0] block mt-1">0.64</span>
-                <span className="text-[10.5px] text-[#60747A]">Disjoint Drug Pools (37.7k pairs)</span>
+      {/* ====================================================================
+          SCENE 04 — BIOLOGICAL INTELLIGENCE (#intelligence)
+          Subject shifts left into an expansive backlit silhouette;
+          benchmark metrics anchor on the right
+      ==================================================================== */}
+      <section
+        id="intelligence"
+        className="relative z-10 flex min-h-screen items-center border-t border-[#20343C]/35 py-28 lg:py-36"
+      >
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(62% 70% at 72% 50%, rgba(5, 9, 13, 0.88) 0%, rgba(5, 9, 13, 0.45) 58%, rgba(5, 9, 13, 0) 100%)",
+          }}
+        />
+
+        <div className="relative mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-12 px-6 lg:grid-cols-12 lg:px-10">
+          {/* Open space on left for the rim-lit macromolecular complex */}
+          <div className="hidden lg:col-span-5 lg:block" />
+
+          <div className="space-y-8 lg:col-span-7">
+            <div className="rounded-2xl border border-[#20343C]/70 bg-[#060C11]/78 p-7 backdrop-blur-md sm:p-9">
+              <div className="section-label mb-3">04 · Rigorous Generalization</div>
+              <h2 className="text-3xl font-semibold tracking-tight text-[#F1F5F2] sm:text-4xl">
+                Beyond isolated predictions.
+              </h2>
+              <p className="mt-4 text-base leading-relaxed text-[#94A5A6]">
+                Most computational models fail when evaluated on completely unseen
+                drugs. SynThera is engineered and benchmarked under strict
+                leave-drugs-out cold generalization, paired with mechanistic
+                faithfulness auditing.
+              </p>
+
+              <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {[
+                  {
+                    title: "Leave-Drugs-Out Cold Testing",
+                    desc: "Disjoint drug pools between training and evaluation ensure structural novelty generalization.",
+                  },
+                  {
+                    title: "Faithfulness Guardrails",
+                    desc: "Automated verification checks ensure chat hypotheses align with graph topology.",
+                  },
+                  {
+                    title: "PubMed Provenance",
+                    desc: "Direct evidence synthesis matching mechanistic targets with peer-reviewed citations.",
+                  },
+                ].map((item) => (
+                  <div
+                    key={item.title}
+                    className="rounded-xl border border-[#20343C]/80 bg-[#0A131A]/85 p-4"
+                  >
+                    <h4 className="text-xs font-semibold text-[#F1F5F2]">
+                      {item.title}
+                    </h4>
+                    <p className="mt-1.5 text-xs leading-relaxed text-[#94A5A6]">
+                      {item.desc}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Verified Benchmark Metric Suite */}
+            <div className="rounded-2xl border border-[#20343C] bg-[#081016]/90 p-7 backdrop-blur-md">
+              <div className="mb-5 flex items-center justify-between border-b border-[#20343C] pb-4">
+                <span className="font-mono text-xs font-semibold uppercase tracking-widest text-[#35C9D5]">
+                  SynergyGNN Cold Inductive Metric Suite
+                </span>
+                <span className="rounded bg-[#00D6A0]/15 px-2.5 py-1 font-mono text-[10px] font-bold text-[#00D6A0]">
+                  VERIFIED
+                </span>
               </div>
 
-              <div className="p-4 rounded-xl bg-[#091218] border border-[#20343C]">
-                <span className="text-[10px] text-[#60747A] uppercase block">Test Cold AUPR</span>
-                <span className="text-[26px] font-bold text-[#35C9D5] block mt-1">0.44</span>
-                <span className="text-[10.5px] text-[#60747A]">Random baseline: ~0.16</span>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  {
+                    label: "Test Cold AUROC",
+                    val: "0.64",
+                    sub: "Disjoint Drug Pools (37.7k pairs)",
+                    color: "#00D6A0",
+                  },
+                  {
+                    label: "Test Cold AUPR",
+                    val: "0.44",
+                    sub: "Random baseline: ~0.16",
+                    color: "#35C9D5",
+                  },
+                  {
+                    label: "Random Split AUROC",
+                    val: "0.87",
+                    sub: "Transductive Pair Split",
+                    color: "#8AE8CC",
+                  },
+                  {
+                    label: "Chat Grounding",
+                    val: "100%",
+                    sub: "Zero ungrounded assertions",
+                    color: "#C7A76A",
+                  },
+                ].map((metric) => (
+                  <div
+                    key={metric.label}
+                    className="rounded-xl border border-[#20343C]/80 bg-[#060C11]/90 p-4"
+                  >
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-[#60747A]">
+                      {metric.label}
+                    </div>
+                    <div
+                      className="mt-1.5 font-mono text-2xl font-bold"
+                      style={{ color: metric.color }}
+                    >
+                      {metric.val}
+                    </div>
+                    <div className="mt-1 text-[11px] text-[#94A5A6]">
+                      {metric.sub}
+                    </div>
+                  </div>
+                ))}
               </div>
-
-              <div className="p-4 rounded-xl bg-[#091218] border border-[#20343C]">
-                <span className="text-[10px] text-[#60747A] uppercase block">Random Split AUROC</span>
-                <span className="text-[26px] font-bold text-[#C7A76A] block mt-1">0.87</span>
-                <span className="text-[10.5px] text-[#60747A]">Transductive Pair Split</span>
-              </div>
-
-              <div className="p-4 rounded-xl bg-[#091218] border border-[#20343C]">
-                <span className="text-[10px] text-[#60747A] uppercase block">Chat Grounding</span>
-                <span className="text-[26px] font-bold text-[#8AE8CC] block mt-1">100%</span>
-                <span className="text-[10.5px] text-[#60747A]">Zero ungrounded assertions</span>
-              </div>
+              <p className="mt-5 border-t border-[#20343C]/60 pt-4 font-mono text-[11px] text-[#60747A]">
+                Note: The background B-DNA double-helix visualization is an illustrative structural graphic; metrics above report empirical leave-drugs-out benchmark evaluation.
+              </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════════════════════
-          SECTION 6: PLATFORM PREVIEW — CINEMATIC BROWSER MOCKUP
-      ═══════════════════════════════════════════════════════════ */}
+      {/* ====================================================================
+          SCENE 05 — PLATFORM PREVIEW (#preview)
+          Subject recedes softly into the deep background; UI becomes primary focus
+      ==================================================================== */}
       <section
         id="preview"
-        className="py-24 px-6 lg:px-12 max-w-7xl mx-auto border-t border-[#20343C]/60 space-y-10"
+        className="relative z-10 border-t border-[#20343C]/45 bg-[#020612]/60 py-28 backdrop-blur-[2px] lg:py-36"
       >
-        <div className="text-center max-w-xl mx-auto space-y-2">
-          <span className="section-label">Interactive Instrument</span>
-          <h2 className="font-serif text-[36px] sm:text-[46px] text-[#F1F5F2]">
-            Enter the Research Workspace
-          </h2>
-          <p className="text-[14px] text-[#94A5A6]">
-            A unified computational oncology workbench integrating pairwise prediction, indication traversal, and biological graph topology.
-          </p>
-        </div>
-
-        {/* Browser Shell Frame */}
-        <div className="rounded-2xl border border-[#20343C] bg-[#091218] shadow-2xl overflow-hidden">
-          {/* Browser Top Controls */}
-          <div className="px-5 py-3 border-b border-[#20343C] bg-[#05090D] flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-[#E05260]/60 inline-block" />
-              <span className="w-3 h-3 rounded-full bg-[#C7A76A]/60 inline-block" />
-              <span className="w-3 h-3 rounded-full bg-[#00D6A0]/60 inline-block" />
-            </div>
-            <div className="font-mono text-[11px] text-[#60747A] bg-[#101C23] px-6 py-1 rounded-full border border-[#20343C]">
-              synthera.app/bench
-            </div>
-            <div className="w-12" />
+        <div className="mx-auto max-w-7xl px-6 lg:px-10">
+          <div className="mx-auto mb-14 max-w-2xl text-center">
+            <div className="section-label mb-3">05 · Interactive Instrument</div>
+            <h2 className="text-3xl font-semibold tracking-tight text-[#F1F5F2] sm:text-4xl lg:text-5xl">
+              Enter the Research Workspace
+            </h2>
+            <p className="mt-4 text-base text-[#94A5A6]">
+              Explore synergy landscapes, pathway neighborhoods, and cited
+              mechanistic hypotheses directly inside the SynThera instrument.
+            </p>
           </div>
 
-          {/* Interactive Preview Surface */}
-          <div className="p-8 lg:p-12 grid grid-cols-1 md:grid-cols-12 gap-8 items-center bg-gradient-to-b from-[#091218] to-[#05090D]">
-            <div className="md:col-span-7 space-y-5">
-              <div className="flex items-center gap-2 text-xs font-mono text-[#00D6A0]">
-                <Activity size={14} />
-                <span>Live Scientific Environment</span>
+          {/* Browser Mockup Frame */}
+          <div className="overflow-hidden rounded-2xl border border-[#20343C] bg-[#0B1218]/95 shadow-2xl shadow-black/80">
+            {/* Mockup Top Chrome */}
+            <div className="flex items-center justify-between border-b border-[#20343C] bg-[#101C23] px-5 py-3.5">
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-2.5 rounded-full bg-[#E06C75]/75" />
+                <div className="h-2.5 w-2.5 rounded-full bg-[#C7A76A]/75" />
+                <div className="h-2.5 w-2.5 rounded-full bg-[#00D6A0]/75" />
+                <span className="ml-3 font-mono text-[11px] text-[#60747A]">
+                  app.synthera.science/bench
+                </span>
               </div>
-              <h3 className="font-serif text-[28px] text-[#F1F5F2]">
-                Temozolomide + Cyclophosphamide in T98G
-              </h3>
-              <p className="text-[14px] text-[#94A5A6] leading-relaxed">
-                In silico evaluation predicts synergy probability of 0.88, driven by MGMT target engagement
-                and downstream synthetic lethality cross-links. Supported by clinical trials indexed in PubMed (PMID: 30341984).
-              </p>
-              <div className="pt-2">
-                <Link to="/bench" className="st-btn-primary">
-                  <span>Open Interactive Bench</span>
-                  <ArrowUpRight size={14} />
-                </Link>
-              </div>
+              <Link
+                to="/bench"
+                className="font-mono text-[11px] font-semibold text-[#00D6A0] hover:underline"
+              >
+                Launch Live Workspace →
+              </Link>
             </div>
 
-            <div className="md:col-span-5 p-5 rounded-xl border border-[#20343C] bg-[#101C23] space-y-3 font-mono text-xs">
-              <div className="flex justify-between border-b border-[#20343C] pb-2 text-[#94A5A6]">
-                <span>Classification:</span>
-                <span className="text-[#00D6A0] font-bold">SYNERGY</span>
+            {/* Mockup Interior Layout */}
+            <div className="grid grid-cols-1 gap-6 p-6 md:p-8 lg:grid-cols-12">
+              {/* Left Sidebar Sim */}
+              <div className="space-y-4 rounded-xl border border-[#20343C] bg-[#0E161E] p-5 lg:col-span-4">
+                <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#60747A]">
+                  Configuration
+                </div>
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-[#20343C] bg-[#080E14] px-3 py-2.5">
+                    <div className="text-[10px] text-[#60747A]">Drug A</div>
+                    <div className="text-xs font-semibold text-[#F1F5F2]">
+                      Temozolomide
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-[#20343C] bg-[#080E14] px-3 py-2.5">
+                    <div className="text-[10px] text-[#60747A]">Drug B</div>
+                    <div className="text-xs font-semibold text-[#F1F5F2]">
+                      Cyclophosphamide
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-[#20343C] bg-[#080E14] px-3 py-2.5">
+                    <div className="text-[10px] text-[#60747A]">Cell Line</div>
+                    <div className="text-xs font-semibold text-[#35C9D5]">
+                      T98G (Glioblastoma)
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between border-b border-[#20343C] pb-2 text-[#94A5A6]">
-                <span>P(Synergy):</span>
-                <span className="text-[#F1F5F2]">0.88</span>
-              </div>
-              <div className="flex justify-between border-b border-[#20343C] pb-2 text-[#94A5A6]">
-                <span>Multi-Objective V:</span>
-                <span className="text-[#35C9D5]">0.82</span>
-              </div>
-              <div className="flex justify-between text-[#94A5A6]">
-                <span>Faithfulness:</span>
-                <span className="text-[#00D6A0]">VERIFIED</span>
+
+              {/* Main Canvas Sim */}
+              <div className="space-y-5 lg:col-span-8">
+                <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#20343C] bg-[#0E161E] p-5">
+                  <div>
+                    <span className="rounded bg-[#00D6A0]/15 px-2.5 py-1 font-mono text-[10px] font-bold uppercase text-[#00D6A0]">
+                      SYNERGY
+                    </span>
+                    <div className="mt-2 text-sm font-semibold text-[#F1F5F2]">
+                      Temozolomide + Cyclophosphamide in T98G
+                    </div>
+                  </div>
+                  <div className="flex gap-6 font-mono text-xs">
+                    <div>
+                      <div className="text-[10px] text-[#60747A]">P(Synergy)</div>
+                      <div className="text-base font-bold text-[#00D6A0]">0.76</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-[#60747A]">
+                        Multi-Objective V
+                      </div>
+                      <div className="text-base font-bold text-[#35C9D5]">0.50</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-[#60747A]">
+                        Faithfulness
+                      </div>
+                      <div className="text-base font-bold text-[#8AE8CC]">
+                        VERIFIED
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-[#20343C] bg-[#0E161E] p-5">
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#35C9D5]">
+                      Mechanistic Summary & Literature Evidence
+                    </span>
+                    <span className="font-mono text-[10px] text-[#60747A]">
+                      PMID: 35837107
+                    </span>
+                  </div>
+                  <p className="text-xs leading-relaxed text-[#94A5A6]">
+                    Dual alkylating regimen shows complementary DNA damage and
+                    checkpoint stress in glioblastoma context. SynergyGNN ranks
+                    top topological target connectivity through DNA repair
+                    modulation and apoptosis crosstalk.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════════════════════
-          SECTION 7: CLOSING CALL TO ACTION & FOOTER
-      ═══════════════════════════════════════════════════════════ */}
-      <section className="py-28 px-6 lg:px-12 max-w-7xl mx-auto border-t border-[#20343C]/60 text-center space-y-8 relative overflow-hidden">
-        <div className="max-w-2xl mx-auto space-y-4 relative z-10">
-          <h2 className="font-serif text-[42px] sm:text-[54px] text-[#F1F5F2] leading-tight tracking-tight">
+      {/* ====================================================================
+          CLOSING CTA & FOOTER
+      ==================================================================== */}
+      <section className="relative z-10 border-t border-[#20343C]/60 bg-[#05090D]/80 py-28 backdrop-blur-sm lg:py-36">
+        <div className="mx-auto max-w-4xl px-6 text-center">
+          <div className="section-label mb-4">Launch SynThera</div>
+          <h2 className="text-3xl font-semibold tracking-tight text-[#F1F5F2] sm:text-5xl">
             Every connection holds a possibility.
           </h2>
-          <p className="text-[16px] text-[#94A5A6] leading-relaxed">
-            Explore the intersection of computational intelligence and cancer biology with SynThera.
+          <p className="mx-auto mt-6 max-w-xl text-base text-[#94A5A6]">
+            Begin discovering cold-generalizing oncology combinations backed by
+            knowledge-graph mechanics and cited clinical literature.
           </p>
-          <div className="pt-4">
+          <div className="mt-10 flex flex-wrap justify-center gap-4">
             <Link
               to="/bench"
-              className="st-btn-primary !py-4 !px-8 text-[15px] font-medium"
+              className="st-btn-primary inline-flex items-center gap-2.5 rounded-lg px-8 py-4 text-sm font-semibold shadow-lg shadow-[#00D6A0]/15"
             >
-              <span>Explore SynThera</span>
-              <ArrowRight size={16} />
+              Launch Research Workspace <ArrowRight size={16} />
+            </Link>
+            <Link
+              to="/indication"
+              className="st-btn-ghost inline-flex items-center gap-2 rounded-lg px-7 py-4 text-sm font-semibold"
+            >
+              Run Indication Sweep
             </Link>
           </div>
         </div>
       </section>
 
-      {/* ── Refined Footer ── */}
-      <footer className="border-t border-[#20343C] bg-[#05090D] py-12 px-6 lg:px-12 text-xs font-mono text-[#60747A]">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8">
-          <div className="space-y-3">
-            <div className="font-serif text-[18px] text-[#F1F5F2] font-bold">SynThera</div>
-            <p className="text-[12px] leading-relaxed text-[#94A5A6] font-sans">
-              Artificial intelligence platform for discovering, ranking, and explaining synergistic oncology drug combinations.
-            </p>
+      <footer className="relative z-10 border-t border-[#20343C] bg-[#04070B] py-12 text-xs text-[#60747A]">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 px-6 md:flex-row lg:px-10">
+          <div className="flex items-center gap-3">
+            <span className="font-semibold tracking-tight text-[#F1F5F2]">
+              SynThera Platform
+            </span>
+            <span>·</span>
+            <span>Computational Drug Combination Discovery</span>
           </div>
-
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-[#F1F5F2] mb-3">Workspaces</div>
-            <ul className="space-y-2">
-              <li><Link to="/bench" className="hover:text-[#00D6A0]">01 · Bench</Link></li>
-              <li><Link to="/indication" className="hover:text-[#00D6A0]">02 · Indication</Link></li>
-              <li><Link to="/literature" className="hover:text-[#00D6A0]">03 · Literature</Link></li>
-              <li><Link to="/neighborhood" className="hover:text-[#00D6A0]">04 · Neighborhood</Link></li>
-            </ul>
+          <div className="flex flex-wrap items-center gap-6">
+            <Link to="/bench" className="transition-colors hover:text-[#F1F5F2]">
+              Discovery Bench
+            </Link>
+            <Link
+              to="/indication"
+              className="transition-colors hover:text-[#F1F5F2]"
+            >
+              Indication Sweep
+            </Link>
+            <Link
+              to="/literature"
+              className="transition-colors hover:text-[#F1F5F2]"
+            >
+              Literature Synthesis
+            </Link>
+            <Link
+              to="/neighborhood"
+              className="transition-colors hover:text-[#F1F5F2]"
+            >
+              Biological Neighborhoods
+            </Link>
           </div>
-
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-[#F1F5F2] mb-3">Data Sources</div>
-            <ul className="space-y-2">
-              <li>Harvard PrimeKG Biomedical Graph</li>
-              <li>DrugComb Experimental Synergies</li>
-              <li>NCBI PubMed E-Utilities RAG</li>
-              <li>Morgan 2048-bit Fingerprints</li>
-            </ul>
+          <div className="font-mono text-[11px]">
+            © {new Date().getFullYear()} SynThera Platform
           </div>
-
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-[#F1F5F2] mb-3">Notice</div>
-            <p className="leading-relaxed text-[#60747A] font-sans">
-              For investigational and hypothesis-generation purposes only. Not intended for direct clinical prescription without wet-lab verification.
-            </p>
-          </div>
-        </div>
-
-        <div className="max-w-7xl mx-auto pt-8 mt-8 border-t border-[#20343C]/40 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div>© {new Date().getFullYear()} SynThera Platform. All rights reserved.</div>
-          <div className="text-[#00D6A0]">Midnight Scientific Intelligence</div>
         </div>
       </footer>
     </div>
   );
 };
+
+export default LandingPage;

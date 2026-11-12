@@ -30,20 +30,15 @@ export const LiteraturePage: React.FC = () => {
       list.push({ ...c, combination: combo, cellLine: cell });
     };
 
-    if (currentPrediction?.supporting_literature) {
-      currentPrediction.supporting_literature.forEach((c) =>
-        push(
-          c,
-          `${currentPrediction.drug_a_name} + ${currentPrediction.drug_b_name}`,
-          currentPrediction.cell_line,
-        ),
-      );
-    }
-    recentPredictions.forEach((p) => {
-      p.supporting_literature?.forEach((c) =>
-        push(c, `${p.drug_a_name} + ${p.drug_b_name}`, p.cell_line),
-      );
-    });
+    const collect = (p: typeof currentPrediction) => {
+      if (!p) return;
+      const combo = `${p.drug_a_name} + ${p.drug_b_name}`;
+      p.supporting_literature?.forEach((c) => push(c, combo, p.cell_line));
+      p.literature?.citations?.forEach((c) => push(c, combo, p.cell_line));
+    };
+
+    collect(currentPrediction);
+    recentPredictions.forEach((p) => collect(p));
     return list;
   }, [currentPrediction, recentPredictions]);
 

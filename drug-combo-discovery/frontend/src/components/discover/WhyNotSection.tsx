@@ -280,8 +280,10 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
                     </div>
                     <p className="font-serif text-[14px] font-medium text-[var(--color-text-primary)] leading-snug">
                       {result.literature.citations[0].title} (
-                      {result.literature.citations[0].year}) ·{" "}
-                      {result.literature.citations[0].first_author} et al.
+                      {result.literature.citations[0].year})
+                      {result.literature.citations[0].first_author
+                        ? ` · ${result.literature.citations[0].first_author} et al.`
+                        : ""}
                     </p>
                     {result.literature.citations[0].snippet && (
                       <p className="meta-text italic leading-relaxed text-[var(--color-text-secondary)]">

@@ -26,6 +26,11 @@ dist-backend/
 *.onnx
 **/*.onnx
 
+# Binaries & Executables
+*.exe
+cloudflared.exe
+*.pdf
+
 # Node / Frontend
 node_modules/
 

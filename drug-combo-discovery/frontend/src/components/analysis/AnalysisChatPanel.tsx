@@ -169,7 +169,7 @@ export const AnalysisChatPanel: React.FC<AnalysisChatPanelProps> = ({
   const sampleQuestions = [
     "What is the biological mechanism of this pair?",
     "Are there PubMed papers supporting this?",
-    "Why not Temozolomide?",
+    `What is the toxicity profile for ${prediction.drug_a_name || "this pair"}?`,
   ];
 
   if (!isOpen) {

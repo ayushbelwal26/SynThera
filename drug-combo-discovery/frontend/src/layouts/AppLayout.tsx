@@ -49,34 +49,43 @@ export const AppLayout: React.FC = () => {
         </div>
 
         {/* Right: Live Environment Telemetry Capsule */}
-        <div className="pointer-events-auto hidden md:flex items-center gap-3 bg-[#091218]/90 backdrop-blur-md border border-[#20343C] px-3.5 py-1.5 rounded-full text-[11px] font-mono shadow-xl">
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                health?.status === "healthy"
-                  ? "bg-[#00D6A0] shadow-[0_0_8px_rgba(0,214,160,0.6)]"
-                  : "bg-[#C7A76A] animate-pulse"
-              }`}
-            />
-            <span className="text-[#94A5A6]">
-              {health?.status === "healthy" ? "HGT Engine Live" : "Engine Offline"}
-            </span>
-          </div>
+        {(() => {
+          const isEngineLive = Boolean(
+            health &&
+              (health.status === "ok" || health.status === "healthy") &&
+              health.model_loaded !== false,
+          );
+          return (
+            <div className="pointer-events-auto hidden md:flex items-center gap-3 bg-[#091218]/90 backdrop-blur-md border border-[#20343C] px-3.5 py-1.5 rounded-full text-[11px] font-mono shadow-xl">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isEngineLive
+                      ? "bg-[#00D6A0] shadow-[0_0_8px_rgba(0,214,160,0.6)]"
+                      : "bg-[#C7A76A] animate-pulse"
+                  }`}
+                />
+                <span className="text-[#94A5A6]">
+                  {isEngineLive ? "HGT Engine Live" : "Engine Offline"}
+                </span>
+              </div>
 
-          <span className="text-[#20343C]">•</span>
+              <span className="text-[#20343C]">•</span>
 
-          <div className="flex items-center gap-1 text-[#60747A]">
-            <Database size={11} className="text-[#35C9D5]" />
-            <span>PrimeKG v2.1</span>
-          </div>
+              <div className="flex items-center gap-1 text-[#60747A]">
+                <Database size={11} className="text-[#35C9D5]" />
+                <span>PrimeKG v2.1</span>
+              </div>
 
-          <span className="text-[#20343C]">•</span>
+              <span className="text-[#20343C]">•</span>
 
-          <div className="flex items-center gap-1 text-[#60747A]">
-            <Cpu size={11} className="text-[#00D6A0]" />
-            <span>Cold-Split Inference</span>
-          </div>
-        </div>
+              <div className="flex items-center gap-1 text-[#60747A]">
+                <Cpu size={11} className="text-[#00D6A0]" />
+                <span>Cold-Split Inference</span>
+              </div>
+            </div>
+          );
+        })()}
       </header>
 
       {/* ── Global Command Palette Overlay ── */}

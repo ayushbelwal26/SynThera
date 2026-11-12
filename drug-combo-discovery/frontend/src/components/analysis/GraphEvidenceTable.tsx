@@ -86,7 +86,7 @@ export const GraphEvidenceTable: React.FC<GraphEvidenceTableProps> = ({
 
       <div className="flex justify-end">
         <Link
-          to="/graph"
+          to="/neighborhood"
           className="inline-flex items-center gap-1.5 text-[12.5px] font-mono text-[var(--color-accent)] hover:underline"
         >
           <span>Explore full PrimeKG graph neighborhood</span>

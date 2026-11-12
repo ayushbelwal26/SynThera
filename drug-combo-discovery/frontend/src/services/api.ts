@@ -29,7 +29,38 @@ import type {
   ChatAnalysisResponse,
 } from "../types/api";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:7860";
+export function getApiBase(): string {
+  // 1. Build-time environment variable (configured in Vercel project settings)
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return (import.meta.env.VITE_API_BASE_URL as string).replace(/\/+$/, "");
+  }
+
+  // 2. Runtime override via query parameter (?api=...) or localStorage
+  if (typeof window !== "undefined") {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const queryApi = params.get("api");
+      if (queryApi) {
+        localStorage.setItem("SYNTHERA_API_URL", queryApi);
+        return queryApi.replace(/\/+$/, "");
+      }
+      const stored = localStorage.getItem("SYNTHERA_API_URL");
+      if (stored) return stored.replace(/\/+$/, "");
+    } catch {
+      // ignore security / storage restrictions
+    }
+  }
+
+  // 3. Relative proxy when on HTTPS without env configured
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    return "/api";
+  }
+
+  // 4. Default local development backend
+  return "http://127.0.0.1:7860";
+}
+
+export const API_BASE = getApiBase();
 
 class ApiError extends Error {
   statusCode?: number;
