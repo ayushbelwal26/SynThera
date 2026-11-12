@@ -1,5 +1,10 @@
 import React, { useState } from "react";
-import { ArrowRight, AlertTriangle, ExternalLink } from "lucide-react";
+import {
+  ArrowRight,
+  AlertTriangle,
+  ExternalLink,
+  HelpCircle,
+} from "lucide-react";
 import { askWhyNot } from "../../services/api";
 import type { WhyNotResponse } from "../../types/api";
 
@@ -37,8 +42,7 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
       setResult(res);
     } catch (err: any) {
       setErrorMsg(
-        err.message ||
-          "Diagnostic query failed. Check the backend connection.",
+        err.message || "Diagnostic query failed. Check the backend connection.",
       );
       setResult(null);
     } finally {
@@ -53,20 +57,26 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
   ];
 
   return (
-    <div id="why-not-section" className="border-t border-[#CFC9BC] pt-6 space-y-4">
+    <div
+      id="why-not-section"
+      className="border-t border-[var(--color-rule)] pt-6 space-y-4"
+    >
       <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
-        <div>
-          <p className="page-kicker">Diagnostic</p>
-          <h3 className="section-title">Why not drug X?</h3>
+        <div className="flex items-center gap-2">
+          <HelpCircle className="w-4 h-4 text-[var(--color-accent)]" />
+          <h3 className="section-title">
+            Diagnostic Counterfactual (Why Not Drug X?)
+          </h3>
         </div>
-        <span className="id-text">
+        <span className="id-text font-mono text-[11.5px] px-2 py-0.5 rounded bg-[var(--color-panel)] border border-[var(--color-rule)]">
           {disease} · {cellLine}
         </span>
       </div>
 
       <p className="page-lede max-w-2xl !mt-0">
-        Ask why a named candidate was omitted from top hits, filtered, or how it
-        compares to the current #1 search hit. Uses the trained GNN pair-scorer.
+        Inquire why a named candidate was omitted from top synergy hits,
+        filtered, or how its top predicted combination compares with the current
+        #1 candidate pair.
       </p>
 
       <div className="bench-panel space-y-3">
@@ -75,7 +85,7 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
             e.preventDefault();
             handleAsk();
           }}
-          className="space-y-2"
+          className="space-y-3"
         >
           <div className="flex gap-2 items-end">
             <input
@@ -91,12 +101,12 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
               disabled={isLoading || !query.trim()}
               className="bench-btn shrink-0"
             >
-              {isLoading ? "Diagnosing…" : "Ask"}
+              {isLoading ? "Diagnosing…" : "Ask Diagnostic"}
             </button>
           </div>
 
-          <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
-            <span className="bench-label">Try</span>
+          <div className="flex items-baseline gap-x-3 gap-y-1.5 flex-wrap pt-1">
+            <span className="bench-label">Suggestions</span>
             {sampleQuestions.map((q) => (
               <button
                 key={q}
@@ -106,7 +116,7 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
                   setQuery(q);
                   handleAsk(q);
                 }}
-                className="text-[12px] text-[#1A535C] underline underline-offset-2 decoration-[#CFC9BC] hover:decoration-[#1A535C] cursor-pointer disabled:opacity-50"
+                className="text-[12px] font-mono text-[var(--color-accent)] underline underline-offset-2 decoration-[var(--color-rule)] hover:decoration-[var(--color-accent)] cursor-pointer disabled:opacity-50"
               >
                 {q}
               </button>
@@ -116,24 +126,26 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
       </div>
 
       {errorMsg && (
-        <div className="py-2 border-y border-[#E8C5C5] text-[13px] text-[#A84B4B] flex items-start gap-2">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+        <div className="py-2.5 px-3 rounded-md bg-[var(--color-antagonism)]/10 border border-[var(--color-antagonism)]/30 text-[13px] text-[var(--color-antagonism)] flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>{errorMsg}</span>
         </div>
       )}
 
       {result && (
-        <div className="border-t border-[#CFC9BC] pt-3 space-y-3">
+        <div className="border border-[var(--color-rule)] rounded-lg p-4 bg-[var(--color-surface)] space-y-3">
           {result.error === "unsupported_question" && (
-            <div className="space-y-1.5 text-[13px] text-[#4A524C]">
-              <p className="font-medium text-[#1A1F1C]">Unsupported question</p>
+            <div className="space-y-1.5 text-[13px] text-[var(--color-text-secondary)]">
+              <p className="font-semibold text-[var(--color-text-primary)]">
+                Unsupported question format
+              </p>
               <p>
                 {result.hint ||
-                  "Ask why not &lt;drug&gt; for the current disease and cell line."}
+                  "Ask why not <drug> for the current disease and cell line."}
               </p>
               <p className="meta-text">
-                Formats: Why not &lt;drug&gt;? · Compare &lt;A&gt; vs &lt;B&gt; ·
-                Why is &lt;A&gt; ranked below &lt;B&gt;?
+                Supported formats: Why not &lt;drug&gt;? · Compare &lt;A&gt; vs
+                &lt;B&gt; · Why is &lt;A&gt; ranked below &lt;B&gt;?
               </p>
             </div>
           )}
@@ -141,15 +153,19 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
           {result.status === "filtered" && (
             <div className="space-y-1.5">
               <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                <span className="font-serif text-[15px] text-[#1A1F1C]">
+                <span className="font-serif text-[15px] font-semibold text-[var(--color-text-primary)]">
                   {result.drug_x?.name}
                   {result.drug_x?.id ? (
-                    <span className="id-text ml-2">{result.drug_x.id}</span>
+                    <span className="id-text ml-2 text-[var(--color-accent)]">
+                      {result.drug_x.id}
+                    </span>
                   ) : null}
                 </span>
-                <span className="meta-text">Filtered · non-therapeutic</span>
+                <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-[var(--color-antagonism)]/10 text-[var(--color-antagonism)] border border-[var(--color-antagonism)]/30 font-medium">
+                  Filtered · Non-therapeutic
+                </span>
               </div>
-              <p className="text-[13px] text-[#4A524C] leading-relaxed">
+              <p className="text-[13.5px] text-[var(--color-text-secondary)] leading-relaxed">
                 {result.explanation_text}
               </p>
             </div>
@@ -158,12 +174,14 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
           {result.status === "unknown_drug" && (
             <div className="space-y-1.5">
               <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                <span className="font-serif text-[15px] text-[#1A1F1C]">
+                <span className="font-serif text-[15px] font-semibold text-[var(--color-text-primary)]">
                   {result.drug_x?.name || "Unknown"}
                 </span>
-                <span className="meta-text">Not in knowledge graph</span>
+                <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-[var(--color-additive)]/10 text-[var(--color-additive)] border border-[var(--color-additive)]/30 font-medium">
+                  Not in PrimeKG subgraph
+                </span>
               </div>
-              <p className="text-[13px] text-[#4A524C] leading-relaxed">
+              <p className="text-[13.5px] text-[var(--color-text-secondary)] leading-relaxed">
                 {result.explanation_text}
               </p>
             </div>
@@ -171,42 +189,45 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
 
           {result.status === "scored" && (
             <div className="space-y-4">
-              <div className="flex items-baseline justify-between gap-2 flex-wrap border-b border-[#CFC9BC] pb-2">
-                <span className="font-serif text-[15px] text-[#1A1F1C]">
+              <div className="flex items-baseline justify-between gap-2 flex-wrap border-b border-[var(--color-rule)] pb-2.5">
+                <span className="font-serif text-[16px] font-semibold text-[var(--color-text-primary)]">
                   {result.drug_x?.name}
                   {result.drug_x?.id ? (
-                    <span className="id-text ml-2">{result.drug_x.id}</span>
+                    <span className="id-text ml-2 text-[var(--color-accent)]">
+                      {result.drug_x.id}
+                    </span>
                   ) : null}
                 </span>
                 <span
-                  className={`text-[12px] font-medium capitalize ${
+                  className={`font-mono text-[11px] font-semibold uppercase px-2.5 py-0.5 rounded-full border ${
                     result.verdict === "competitive"
-                      ? "text-[#1A535C]"
-                      : "text-[#8B7355]"
+                      ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)] border-[var(--color-accent)]"
+                      : "bg-[var(--color-additive)]/10 text-[var(--color-additive)] border-[var(--color-additive)]/40"
                   }`}
                 >
                   {result.verdict === "competitive"
-                    ? "Competitive candidate"
-                    : "Lower predicted synergy"}
+                    ? "Competitive Candidate"
+                    : "Lower Predicted Synergy"}
                 </span>
               </div>
 
-              <p className="text-[13px] text-[#4A524C] leading-relaxed">
+              <p className="text-[13.5px] text-[var(--color-text-secondary)] leading-relaxed">
                 {result.explanation_text}
               </p>
 
               {result.best_pair && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-[#CFC9BC] border-y border-[#CFC9BC]">
-                  <div className="py-2.5 sm:pr-4 space-y-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-md bg-[var(--color-panel)] border border-[var(--color-rule)]">
+                  <div className="space-y-1">
                     <span className="bench-label block">
-                      Best pairing in pool
+                      Best Pairing in Candidate Pool
                     </span>
-                    <div className="font-serif text-[14px] text-[#1A1F1C]">
-                      {result.best_pair.drug_a_name} ×{" "}
+                    <div className="font-serif text-[15px] font-semibold text-[var(--color-text-primary)]">
+                      {result.best_pair.drug_a_name}{" "}
+                      <span className="text-[var(--color-accent)]">×</span>{" "}
                       {result.best_pair.drug_b_name}
                     </div>
                     <div className="flex items-baseline gap-2">
-                      <span className="metric-value text-[14px]">
+                      <span className="metric-value text-[15px] text-[var(--color-accent)]">
                         {result.best_pair.p_synergy.toFixed(4)}
                       </span>
                       <span className="meta-text">
@@ -216,16 +237,17 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
                   </div>
 
                   {result.reference_top && (
-                    <div className="py-2.5 sm:pl-4 space-y-1">
+                    <div className="space-y-1 sm:border-l sm:border-[var(--color-rule)] sm:pl-3">
                       <span className="bench-label block">
-                        Search #1 reference
+                        Search #1 Reference Hit
                       </span>
-                      <div className="font-serif text-[14px] text-[#1A1F1C]">
-                        {result.reference_top.drug_a_name} ×{" "}
+                      <div className="font-serif text-[15px] font-semibold text-[var(--color-text-primary)]">
+                        {result.reference_top.drug_a_name}{" "}
+                        <span className="text-[var(--color-accent)]">×</span>{" "}
                         {result.reference_top.drug_b_name}
                       </div>
                       <div className="flex items-baseline gap-2">
-                        <span className="metric-value text-[14px]">
+                        <span className="metric-value text-[15px]">
                           {result.reference_top.p_synergy.toFixed(4)}
                         </span>
                         <span className="meta-text">
@@ -243,32 +265,29 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
 
               {result.literature?.citations &&
                 result.literature.citations.length > 0 && (
-                  <div className="space-y-1.5 border-t border-[#CFC9BC] pt-3">
+                  <div className="space-y-1.5 border-t border-[var(--color-rule)] pt-3">
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="bench-label">PubMed grounding</span>
+                      <span className="bench-label">PubMed Grounding</span>
                       <a
                         href={result.literature.citations[0].url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="id-text text-[#1A535C] hover:underline inline-flex items-center gap-1"
+                        className="id-text text-[var(--color-accent)] hover:underline inline-flex items-center gap-1"
                       >
                         PMID {result.literature.citations[0].pmid}
                         <ExternalLink className="w-3 h-3" />
                       </a>
                     </div>
-                    <p className="font-serif text-[14px] text-[#1A1F1C] leading-snug">
+                    <p className="font-serif text-[14px] font-medium text-[var(--color-text-primary)] leading-snug">
                       {result.literature.citations[0].title} (
                       {result.literature.citations[0].year}) ·{" "}
                       {result.literature.citations[0].first_author} et al.
                     </p>
                     {result.literature.citations[0].snippet && (
-                      <p className="meta-text italic leading-relaxed">
+                      <p className="meta-text italic leading-relaxed text-[var(--color-text-secondary)]">
                         “{result.literature.citations[0].snippet}”
                       </p>
                     )}
-                    <span className="meta-text">
-                      {result.literature.citations[0].match_reason}
-                    </span>
                   </div>
                 )}
 
@@ -285,9 +304,11 @@ export const WhyNotSection: React.FC<WhyNotSectionProps> = ({
                     }
                     className="bench-btn"
                   >
-                    Inspect {result.best_pair.drug_a_name} ×{" "}
-                    {result.best_pair.drug_b_name}
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    <span>
+                      Inspect {result.best_pair.drug_a_name} ×{" "}
+                      {result.best_pair.drug_b_name}
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
               )}

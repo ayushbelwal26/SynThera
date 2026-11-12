@@ -34,10 +34,28 @@ function Section({
         emphasis ? "pt-6 pb-6" : ""
       }`}
     >
-      <div className="lg:col-span-3">
-        <span className="meta-text">{num}</span>
+      {/* Left column with vertical teal gradient accent line */}
+      <div className="lg:col-span-3 relative pl-4">
+        {/* Vertical gradient accent line */}
+        <div
+          className="absolute left-0 top-0 bottom-0 w-[2px] rounded-full"
+          style={{
+            background:
+              "linear-gradient(to bottom, var(--color-accent), transparent)",
+            opacity: 0.6,
+          }}
+        />
+        <span
+          className="meta-text font-mono"
+          style={{ color: "var(--color-accent)", fontFamily: "monospace" }}
+        >
+          {num}
+        </span>
         <h3 className="section-title mt-0.5">{title}</h3>
-        <p className="mt-1.5 text-[12px] text-[#6B746C] leading-snug max-w-[16rem]">
+        <p
+          className="mt-1.5 text-[12px] leading-snug max-w-[16rem]"
+          style={{ color: "var(--color-text-muted)" }}
+        >
           {blurb}
         </p>
       </div>
@@ -107,15 +125,35 @@ export const AnalysisPage: React.FC = () => {
         >
           Open bench
         </button>
-        <div className="border-t border-[#CFC9BC] pt-3">
+        <div
+          className="border-t pt-3"
+          style={{ borderColor: "var(--color-rule)" }}
+        >
           <span className="bench-label block mb-2">Quick-load reference</span>
-          <div className="divide-y divide-[#CFC9BC] border-y border-[#CFC9BC]">
+          <div
+            className="divide-y border-y"
+            style={{
+              borderColor: "var(--color-rule)",
+            }}
+          >
             {BENCHMARKS.map((bm, idx) => (
               <button
                 key={bm.id}
                 type="button"
                 onClick={() => handleQuickLoadBenchmark(idx)}
-                className="w-full text-left py-2 flex justify-between gap-3 hover:bg-[#E8EDE0]/40"
+                className="w-full text-left py-2 flex justify-between gap-3 transition-colors"
+                style={
+                  {
+                    "--hover-bg": "var(--color-accent-soft)",
+                  } as React.CSSProperties
+                }
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background =
+                    "var(--color-accent-soft)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background = "transparent")
+                }
               >
                 <span className="font-serif text-[14px]">
                   {bm.drugA.name} + {bm.drugB.name}
@@ -149,16 +187,33 @@ export const AnalysisPage: React.FC = () => {
           blurb="Attributed PrimeKG subgraph driving the synergy prediction, showing drug-target binding, pathway convergence, and disease connections."
         >
           {/* View Mode Toggle Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[#CFC9BC]">
-            <div className="flex items-center gap-1 bg-[#E8EDE0]/70 p-1 border border-[#CFC9BC]">
+          <div
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b"
+            style={{ borderColor: "var(--color-rule)" }}
+          >
+            {/* Pill-shaped toggle group */}
+            <div
+              className="flex items-center gap-1 p-1 rounded-full"
+              style={{
+                background: "var(--color-panel)",
+                border: "1px solid var(--color-rule)",
+              }}
+            >
               <button
                 type="button"
                 onClick={() => setGraphViewMode("graph")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-all rounded-full"
+                style={
                   graphViewMode === "graph"
-                    ? "bg-[#1A535C] text-white shadow-sm"
-                    : "text-[#4A524C] hover:text-[#1A1F1C]"
-                }`}
+                    ? {
+                        background: "var(--color-accent)",
+                        color: "#fff",
+                        boxShadow: "0 0 10px var(--color-accent-glow)",
+                      }
+                    : {
+                        color: "var(--color-text-muted)",
+                      }
+                }
               >
                 <Network className="w-3.5 h-3.5" />
                 <span>Interactive Network Graph</span>
@@ -166,11 +221,18 @@ export const AnalysisPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setGraphViewMode("table")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-all rounded-full"
+                style={
                   graphViewMode === "table"
-                    ? "bg-[#1A535C] text-white shadow-sm"
-                    : "text-[#4A524C] hover:text-[#1A1F1C]"
-                }`}
+                    ? {
+                        background: "var(--color-accent)",
+                        color: "#fff",
+                        boxShadow: "0 0 10px var(--color-accent-glow)",
+                      }
+                    : {
+                        color: "var(--color-text-muted)",
+                      }
+                }
               >
                 <Table className="w-3.5 h-3.5" />
                 <span>Attribution Edge Table</span>
@@ -178,13 +240,17 @@ export const AnalysisPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-[12px] text-[#6B746C] font-mono">
+              <span
+                className="text-[12px] font-mono"
+                style={{ color: "var(--color-text-muted)" }}
+              >
                 {(currentPrediction.top_edges || []).length} attributed edges
               </span>
               <button
                 type="button"
                 onClick={() => navigate("/graph")}
-                className="text-[12px] text-[#1A535C] hover:underline flex items-center gap-1 font-medium"
+                className="text-[12px] flex items-center gap-1 font-medium transition-colors hover:underline"
+                style={{ color: "var(--color-accent)" }}
               >
                 <span>Full Graph Explorer</span>
                 <ArrowRight className="w-3 h-3" />
@@ -193,7 +259,13 @@ export const AnalysisPage: React.FC = () => {
           </div>
 
           {graphViewMode === "graph" ? (
-            <div className="bench-panel-flush overflow-hidden bg-[#FFFEFB] border border-[#CFC9BC]">
+            <div
+              className="bench-panel-flush overflow-hidden"
+              style={{
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-rule)",
+              }}
+            >
               <PathwayGraph
                 topEdges={currentPrediction.top_edges || []}
                 drugAName={currentPrediction.drug_a_name}
@@ -249,12 +321,36 @@ export const AnalysisPage: React.FC = () => {
           <button
             type="button"
             onClick={() => setChatOpen(true)}
-            className="w-full flex items-center justify-between border border-[#CFC9BC] bg-[#FFFEF8] px-4 py-3 group hover:border-[#1A535C]"
+            className="w-full flex items-center justify-between px-4 py-3 group transition-all"
+            style={{
+              border: "1px solid var(--color-rule)",
+              background: "var(--color-surface)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "var(--color-accent)";
+              e.currentTarget.style.boxShadow =
+                "0 0 12px var(--color-accent-glow)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "var(--color-rule)";
+              e.currentTarget.style.boxShadow = "none";
+            }}
           >
-            <span className="text-[13px] text-[#4A524C] group-hover:text-[#1A1F1C]">
+            <span
+              className="text-[13px]"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
               Ask about mechanism, literature, or ranking for this pair
             </span>
-            <span className="bench-btn !py-1.5 !px-3 text-[12px]">Ask</span>
+            <span
+              className="!py-1.5 !px-3 text-[12px] rounded font-medium transition-colors"
+              style={{
+                background: "var(--color-accent)",
+                color: "#fff",
+              }}
+            >
+              Ask
+            </span>
           </button>
         </Section>
 
@@ -263,20 +359,46 @@ export const AnalysisPage: React.FC = () => {
             <span className="bench-label block mb-3">
               Recent records · {recentPredictions.length}
             </span>
-            <div className="divide-y divide-[#CFC9BC] border-y border-[#CFC9BC]">
+            <div
+              className="divide-y border-y rounded-lg overflow-hidden"
+              style={{ borderColor: "var(--color-rule)" }}
+            >
               {recentPredictions.map((p, idx) => (
                 <button
                   key={`${p.drug_a}_${p.drug_b}_${p.cell_line}_${idx}`}
                   type="button"
                   onClick={() => setCurrentPrediction(p)}
-                  className={`w-full text-left py-2.5 flex justify-between gap-3 ${
-                    p === currentPrediction ? "bg-[#E8EDE0]/50" : ""
-                  }`}
+                  className="w-full text-left py-2.5 px-3 flex justify-between gap-3 transition-all group"
+                  style={
+                    p === currentPrediction
+                      ? {
+                          background: "var(--color-accent-soft)",
+                          borderLeft: "3px solid var(--color-accent)",
+                        }
+                      : {}
+                  }
+                  onMouseEnter={(e) => {
+                    if (p !== currentPrediction) {
+                      e.currentTarget.style.background =
+                        "var(--color-accent-soft)";
+                      e.currentTarget.style.borderLeft =
+                        "3px solid var(--color-accent)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (p !== currentPrediction) {
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.borderLeft = "none";
+                    }
+                  }}
                 >
                   <span className="font-serif text-[14px]">
                     {p.drug_a_name} + {p.drug_b_name}
                   </span>
-                  <span className="font-mono text-[10px] text-[#6B746C]">
+                  <span
+                    className="font-mono text-[10px]"
+                    style={{ color: "var(--color-text-muted)" }}
+                  >
                     {p.predicted_class}
                   </span>
                 </button>

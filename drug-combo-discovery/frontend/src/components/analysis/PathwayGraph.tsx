@@ -11,7 +11,7 @@ import {
 } from "@xyflow/react";
 import type { Node, Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Network } from "lucide-react";
+import { Network, Sparkles, Eye, EyeOff } from "lucide-react";
 import type { ExplanationEdge } from "../../types/api";
 
 interface PathwayGraphProps {
@@ -22,59 +22,70 @@ interface PathwayGraphProps {
   onSelectEntity?: (entity: { type: "node" | "edge"; data: any }) => void;
 }
 
-// Custom Biological Node Component
+// Custom Biological Node Component — themed with CSS variables
 const BiologicalNode = ({ data }: { data: any }) => {
-  const typeStyles = {
+  const nodeType = data.nodeType as "drug" | "protein" | "pathway" | "disease";
+
+  const typeConfig: Record<
+    string,
+    { badgeBg: string; badgeText: string; borderColor: string; glow: string }
+  > = {
     drug: {
-      bg: "bg-[#E8F0ED]",
-      border: "border-[#2F6B5E]",
-      badge: "bg-[#D4E5DF] text-[#25564B]",
-      text: "text-[#1C2421]",
+      badgeBg: "bg-[#173D32]/10",
+      badgeText: "text-[#173D32] font-bold",
+      borderColor: "border-[#173D32]",
+      glow: "shadow-xs",
     },
     protein: {
-      bg: "bg-[#F7F0E4]",
-      border: "border-[#B8893D]",
-      badge: "bg-[#F5EFE4] text-[#7A5A28]",
-      text: "text-[#1C2421]",
+      badgeBg: "bg-[#B78B54]/15",
+      badgeText: "text-[#B78B54] font-semibold",
+      borderColor: "border-[#B78B54]",
+      glow: "shadow-none",
     },
     pathway: {
-      bg: "bg-[#F3F0F7]",
-      border: "border-[#8B7BA8]",
-      badge: "bg-[#EDE8F3] text-[#6B5B8A]",
-      text: "text-[#1C2421]",
+      badgeBg: "bg-[#8B7BA8]/15",
+      badgeText: "text-[#8B7BA8] font-semibold",
+      borderColor: "border-[#8B7BA8]",
+      glow: "shadow-none",
     },
     disease: {
-      bg: "bg-[#E6F2F2]",
-      border: "border-[#4A8B8A]",
-      badge: "bg-[#D4E8E8] text-[#2F5E5D]",
-      text: "text-[#1C2421]",
+      badgeBg: "bg-[#318575]/15",
+      badgeText: "text-[#318575] font-semibold",
+      borderColor: "border-[#318575]",
+      glow: "shadow-none",
     },
-  }[data.nodeType as "drug" | "protein" | "pathway" | "disease"] || {
-    bg: "bg-[#FFFEFB]",
-    border: "border-[#D8D5CE]",
-    badge: "bg-[#EEEBE5] text-[#5A635E]",
-    text: "text-[#1C2421]",
+  };
+
+  const config = typeConfig[nodeType] ?? {
+    badgeBg: "bg-[var(--color-panel)]",
+    badgeText: "text-[var(--color-text-muted)]",
+    borderColor: "border-[var(--color-rule)]",
+    glow: "shadow-none",
   };
 
   return (
     <div
-      className={`px-2.5 py-1.5 border min-w-[130px] max-w-[190px] cursor-pointer hover:border-[#1A535C] ${typeStyles.bg} ${typeStyles.border}`}
+      className={`px-3 py-2 min-w-[135px] max-w-[195px] rounded-md cursor-pointer transition-all duration-200 bg-[var(--color-surface)] border ${config.borderColor} ${config.glow} hover:scale-105 hover:border-[var(--color-accent)] hover:shadow-[0_0_16px_var(--color-accent-glow)]`}
     >
       <Handle
         type="target"
         position={Position.Left}
-        className="!bg-[#6B746F]"
+        className="!bg-[var(--color-accent)] !w-2 !h-2"
       />
-      <div className="flex items-center justify-between mb-0.5 gap-1">
-        <span className={`text-[10px] capitalize ${typeStyles.badge} px-1`}>
+      <div className="flex items-center justify-between mb-1 gap-1">
+        <span
+          className={`text-[9.5px] uppercase tracking-wider px-1.5 py-0.2 rounded font-mono ${config.badgeBg} ${config.badgeText}`}
+        >
           {data.nodeType}
         </span>
         {data.isHub && (
-          <span className="text-[10px] text-[#6B746C]">query hub</span>
+          <span className="text-[9px] font-mono font-bold uppercase text-[var(--color-accent)] bg-[var(--color-accent-soft)] px-1 rounded">
+            Hub
+          </span>
         )}
       </div>
       <div
-        className={`text-[12px] font-medium truncate ${typeStyles.text}`}
+        className="text-[12.5px] font-medium text-[var(--color-text-primary)] truncate font-sans"
         title={data.label}
       >
         {data.label}
@@ -82,7 +93,7 @@ const BiologicalNode = ({ data }: { data: any }) => {
       <Handle
         type="source"
         position={Position.Right}
-        className="!bg-[#6B746F]"
+        className="!bg-[var(--color-accent)] !w-2 !h-2"
       />
     </div>
   );
@@ -193,25 +204,39 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
     const edgesList: Edge[] = (topEdges || []).map((e, idx) => {
       const importanceNorm = Math.max(0.1, Math.min(1.0, e.importance));
       const strokeWidth = 1.5 + importanceNorm * 2.5;
+      const isHighImportance = importanceNorm > 0.6;
 
       return {
         id: `edge-${idx}`,
         source: e.source,
         target: e.target,
         type: "smoothstep",
-        animated: importanceNorm > 0.6,
+        animated: isHighImportance,
         label: showLabels ? e.relation.replace(/_/g, " ") : undefined,
-        labelStyle: { fontSize: 10, fill: "#5A635E", fontFamily: "Inter, system-ui, sans-serif" },
-        labelBgStyle: { fill: "#FFFEFB", fillOpacity: 0.9, stroke: "#E5E2DC" },
+        labelStyle: {
+          fontSize: 10,
+          fill: "var(--color-text-muted)",
+          fontFamily: "var(--font-sans)",
+        },
+        labelBgStyle: {
+          fill: "var(--color-panel)",
+          fillOpacity: 0.95,
+          stroke: "var(--color-rule)",
+        },
         style: {
-          stroke: "#8A918C",
+          stroke: isHighImportance
+            ? "var(--color-accent)"
+            : "var(--color-rule-strong)",
           strokeWidth,
+          opacity: isHighImportance ? 1 : 0.65,
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
           width: 12,
           height: 12,
-          color: "#8A918C",
+          color: isHighImportance
+            ? "var(--color-accent)"
+            : "var(--color-rule-strong)",
         },
         data: e,
       };
@@ -242,54 +267,67 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
   );
 
   return (
-    <div className="p-4">
+    <div className="p-4 space-y-4">
       {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <Network className="w-4 h-4 text-[#1A535C]" />
+            <Network className="w-4 h-4 text-[var(--color-accent)]" />
             <h3 className="section-title text-[16px]">
-              Attribution pathway map
+              Attribution Pathway Map
             </h3>
           </div>
           <p className="meta-text mt-0.5">
-            Local subgraph · {(topEdges || []).length} top edges
+            Local PrimeKG explanation subgraph · {(topEdges || []).length}{" "}
+            attributed edges
           </p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap text-[11px] text-[#6B746C]">
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 bg-[#D4E5DF] border border-[#2F6B5E]" />
+        <div className="flex items-center gap-3 flex-wrap text-[11px] text-[var(--color-text-muted)]">
+          {/* Legend pills */}
+          <span className="flex items-center gap-1.5 font-mono">
+            <span className="w-2 h-2 rounded-full bg-[var(--color-accent)] shadow-[0_0_6px_var(--color-accent)]" />
             Drug
           </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 bg-[#F5EFE4] border border-[#B8893D]" />
+          <span className="flex items-center gap-1.5 font-mono">
+            <span className="w-2 h-2 rounded-full bg-[#E3BA78]" />
             Protein
           </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 bg-[#EDE8F3] border border-[#8B7BA8]" />
+          <span className="flex items-center gap-1.5 font-mono">
+            <span className="w-2 h-2 rounded-full bg-[#8B7BA8]" />
             Pathway
           </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 bg-[#D4E8E8] border border-[#4A8B8A]" />
+          <span className="flex items-center gap-1.5 font-mono">
+            <span className="w-2 h-2 rounded-full bg-[var(--color-accent)] opacity-70" />
             Disease
           </span>
+
           <button
             type="button"
             onClick={() => setShowLabels((prev) => !prev)}
-            className="ml-1 text-[11px] text-[#1A535C] underline underline-offset-2 decoration-[#CFC9BC] hover:decoration-[#1A535C]"
+            className="flex items-center gap-1 ml-2 font-mono text-[11px] text-[var(--color-accent)] hover:underline cursor-pointer"
           >
-            {showLabels ? "Hide edge labels" : "Show edge labels"}
+            {showLabels ? <EyeOff size={12} /> : <Eye size={12} />}
+            <span>{showLabels ? "Hide edge labels" : "Show edge labels"}</span>
           </button>
         </div>
       </div>
 
-      <div className="border-l-2 border-[#1A535C] pl-3 py-2 mb-3 text-[13px] bg-[#E8EDE0]/30">
-        <span className="bench-label block mb-0.5 text-[#1A535C]">Mechanistic reasoning</span>
-        <p className="text-[#4A524C] leading-relaxed">{explanationText}</p>
-      </div>
+      {/* Mechanistic reasoning callout */}
+      {explanationText && (
+        <div className="p-3.5 rounded-lg border-l-4 border-l-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[13.5px]">
+          <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase text-[var(--color-accent)] mb-1">
+            <Sparkles size={12} />
+            <span>PrimeKG Mechanistic Reasoning</span>
+          </div>
+          <p className="leading-relaxed text-[var(--color-text-secondary)]">
+            {explanationText}
+          </p>
+        </div>
+      )}
 
-      <div className="h-[480px] w-full border border-[#CFC9BC] overflow-hidden relative bg-[#F4F3ED] shadow-inner">
+      {/* ReactFlow canvas */}
+      <div className="h-[500px] w-full rounded-lg overflow-hidden relative border border-[var(--color-rule)] bg-[var(--color-surface)] shadow-inner">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -303,12 +341,15 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
           minZoom={0.3}
           maxZoom={2.0}
         >
-          <Background color="#D8D5CE" gap={16} size={1} />
+          <Background color="var(--color-rule)" gap={16} size={1} />
           <Controls showInteractive={false} />
         </ReactFlow>
 
-        <div className="absolute top-2 left-3 pointer-events-none z-10 flex items-center gap-2 text-[10px] font-mono text-[#6B746C] bg-[#FFFEF8]/90 px-2.5 py-1 border border-[#CFC9BC]/80 backdrop-blur-sm">
-          <span className="font-semibold text-[#1A535C]">Biological Axis:</span>
+        {/* Axis layout tag */}
+        <div className="absolute top-3 left-3 pointer-events-none z-10 flex items-center gap-2 text-[10.5px] font-mono px-3 py-1 rounded-md bg-[var(--color-panel)] border border-[var(--color-rule)] text-[var(--color-text-muted)] shadow-md">
+          <span className="font-bold text-[var(--color-accent)]">
+            Flow Axis:
+          </span>
           <span>Compounds</span>
           <span>→</span>
           <span>Targets</span>
@@ -319,9 +360,13 @@ export const PathwayGraph: React.FC<PathwayGraphProps> = ({
         </div>
       </div>
 
-      <div className="mt-2.5 flex items-center justify-between gap-3 text-[11px] text-[#6B746C]">
-        <span>Click any node or edge to open the inspection inspector</span>
-        <span className="font-mono">Line thickness = attribution gradient weight</span>
+      <div className="flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
+        <span>
+          Click any node or relation edge to inspect attribute weight details
+        </span>
+        <span className="font-mono">
+          Pulsing edges = Top gradient importance
+        </span>
       </div>
     </div>
   );

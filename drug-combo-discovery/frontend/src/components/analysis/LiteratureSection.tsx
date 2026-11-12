@@ -1,4 +1,5 @@
 import type { LiteratureCitation, LiteratureResult } from "../../types/api";
+import { ExternalLink } from "lucide-react";
 
 interface LiteratureSectionProps {
   citations?: LiteratureCitation[];
@@ -22,52 +23,67 @@ export const LiteratureSection: React.FC<LiteratureSectionProps> = ({
 
   if (!activeCitations.length) {
     return (
-      <p className="meta-text leading-relaxed">
-        {literature?.no_literature_reason ||
-          "No matching PubMed records for this pair. Mechanism may be novel relative to indexed literature."}
+      <div className="p-4 rounded-lg bg-[var(--color-surface)] border border-[var(--color-rule)]">
+        <p className="meta-text leading-relaxed text-[var(--color-text-secondary)]">
+          {literature?.no_literature_reason ||
+            "No matching PubMed co-occurrence records for this combination. Mechanism may represent a novel candidate relative to current indexed literature."}
+        </p>
         {literature?.query_used && (
-          <span className="block mt-1.5 id-text">Query: {literature.query_used}</span>
+          <span className="block mt-2 font-mono text-[11px] text-[var(--color-accent)]">
+            PubMed Query: {literature.query_used}
+          </span>
         )}
-      </p>
+      </div>
     );
   }
 
   return (
-    <div className="divide-y divide-[#CFC9BC] border-y border-[#CFC9BC]">
+    <div className="divide-y divide-[var(--color-rule)]/60 border-y border-[var(--color-rule)]">
       {activeCitations.map((cite, idx) => (
         <article
           key={cite.pmid || idx}
-          className="py-3.5 grid grid-cols-1 md:grid-cols-12 gap-3"
+          className="py-4 grid grid-cols-1 md:grid-cols-12 gap-4"
         >
-          <div className="md:col-span-3 id-text space-y-0.5">
+          <div className="md:col-span-3 space-y-1 font-mono text-[12px]">
             <a
               href={cite.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="underline underline-offset-2 decoration-[#CFC9BC] hover:decoration-[#1A535C] text-[#1A1F1C]"
+              className="inline-flex items-center gap-1 font-bold text-[var(--color-accent)] hover:underline"
             >
-              PMID {cite.pmid}
+              <span>PMID {cite.pmid}</span>
+              <ExternalLink size={12} />
             </a>
-            {cite.journal && <div className="meta-text">{cite.journal}</div>}
-            {cite.year && <div className="meta-text">{cite.year}</div>}
+            {cite.journal && (
+              <div className="text-[var(--color-text-muted)] truncate">
+                {cite.journal}
+              </div>
+            )}
+            {cite.year && (
+              <div className="text-[var(--color-text-muted)]">{cite.year}</div>
+            )}
           </div>
-          <div className="md:col-span-9">
-            <h4 className="font-serif text-[16px] text-[#1A1F1C] leading-snug font-semibold">
+
+          <div className="md:col-span-9 space-y-1.5">
+            <h4 className="font-serif text-[16px] text-[var(--color-text-primary)] font-semibold leading-snug">
               {cite.title}
             </h4>
             {cite.snippet && (
-              <p className="mt-1.5 text-[13px] text-[#4A524C] italic leading-relaxed">
+              <p className="text-[13px] text-[var(--color-text-secondary)] italic leading-relaxed pl-2.5 border-l-2 border-[var(--color-rule-strong)]">
                 “{cite.snippet}”
               </p>
             )}
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 meta-text">
-              {cite.match_reason && <span>Match · {cite.match_reason}</span>}
+            <div className="flex flex-wrap gap-2 pt-1 font-mono text-[11px]">
+              {cite.match_reason && (
+                <span className="px-2 py-0.5 rounded bg-[var(--color-accent-soft)] text-[var(--color-accent)] font-medium">
+                  {cite.match_reason}
+                </span>
+              )}
               {drugAName && drugBName && (
-                <span>
+                <span className="px-2 py-0.5 rounded bg-[var(--color-panel)] border border-[var(--color-rule)] text-[var(--color-text-muted)]">
                   {drugAName} + {drugBName}
                 </span>
               )}
-              {cite.evidence_type && <span>{cite.evidence_type}</span>}
             </div>
           </div>
         </article>

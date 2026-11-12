@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { CellLineRelevanceStatus } from "../../types/api";
 import { CellLineDropdown } from "./CellLineDropdown";
+import { Search, Sparkles } from "lucide-react";
 
 interface DiscoveryModeProps {
   cellLineStatus: CellLineRelevanceStatus;
@@ -53,10 +54,12 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
   const methods: Array<"beam" | "greedy" | "mcts"> = ["beam", "greedy", "mcts"];
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-end">
         <div className="lg:col-span-5">
-          <label className="bench-label block mb-1">Indication</label>
+          <label className="bench-label block mb-1.5">
+            Target Indication / Neoplasm
+          </label>
           <input
             type="text"
             value={disease}
@@ -69,19 +72,21 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
         </div>
 
         <div className="lg:col-span-4">
-          <label className="bench-label block mb-1">Traversal</label>
-          <div className="flex border border-[#CFC9BC]">
+          <label className="bench-label block mb-1.5">
+            Search Traversal Method
+          </label>
+          <div className="flex border border-[var(--color-rule)] rounded-md overflow-hidden bg-[var(--color-surface)]">
             {methods.map((m) => (
               <button
                 key={m}
                 type="button"
                 disabled={isLoading}
                 onClick={() => setSearchMethod(m)}
-                className={`flex-1 py-1.5 text-[12px] capitalize transition-colors ${
+                className={`flex-1 py-1.5 text-[12.5px] font-mono font-medium capitalize transition-all cursor-pointer ${
                   searchMethod === m
-                    ? "bg-[#1A1F1C] text-[#F5F5ED]"
-                    : "bg-transparent text-[#4A524C] hover:bg-[#E8EDE0]"
-                } ${m !== "beam" ? "border-l border-[#CFC9BC]" : ""}`}
+                    ? "bg-[var(--color-accent)] text-[#041A1E] font-bold shadow-[0_0_12px_var(--color-accent-glow)]"
+                    : "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-accent-soft)]/50"
+                } ${m !== "beam" ? "border-l border-[var(--color-rule)]" : ""}`}
               >
                 {m}
               </button>
@@ -100,11 +105,11 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
       </div>
 
       {/* Advanced params — compact row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-[#CFC9BC] pt-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 border-t border-[var(--color-rule)] pt-4">
         <div>
-          <div className="flex justify-between mb-1">
-            <span className="bench-label">Pool</span>
-            <span className="font-mono text-[12px] text-[#1A1F1C]">
+          <div className="flex justify-between mb-1.5">
+            <span className="bench-label">Candidate Pool</span>
+            <span className="font-mono text-[12px] font-semibold text-[var(--color-accent)]">
               {maxCandidates}
             </span>
           </div>
@@ -116,13 +121,15 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
             value={maxCandidates}
             disabled={isLoading}
             onChange={(e) => setMaxCandidates(Number(e.target.value))}
-            className="w-full accent-[#1A535C]"
+            className="w-full accent-[var(--color-accent)] cursor-pointer"
           />
         </div>
         <div>
-          <div className="flex justify-between mb-1">
-            <span className="bench-label">Top-K</span>
-            <span className="font-mono text-[12px] text-[#1A1F1C]">{topK}</span>
+          <div className="flex justify-between mb-1.5">
+            <span className="bench-label">Top Synergies (K)</span>
+            <span className="font-mono text-[12px] font-semibold text-[var(--color-accent)]">
+              {topK}
+            </span>
           </div>
           <input
             type="range"
@@ -132,15 +139,15 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
             value={topK}
             disabled={isLoading}
             onChange={(e) => setTopK(Number(e.target.value))}
-            className="w-full accent-[#1A535C]"
+            className="w-full accent-[var(--color-accent)] cursor-pointer"
           />
         </div>
         {searchMethod === "mcts" && (
           <>
             <div>
-              <div className="flex justify-between mb-1">
-                <span className="bench-label">Simulations</span>
-                <span className="font-mono text-[12px] text-[#1A1F1C]">
+              <div className="flex justify-between mb-1.5">
+                <span className="bench-label">MCTS Rollouts</span>
+                <span className="font-mono text-[12px] font-semibold text-[var(--color-accent)]">
                   {nSimulations}
                 </span>
               </div>
@@ -152,27 +159,27 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
                 value={nSimulations}
                 disabled={isLoading}
                 onChange={(e) => setNSimulations(Number(e.target.value))}
-                className="w-full accent-[#1A535C]"
+                className="w-full accent-[var(--color-accent)] cursor-pointer"
               />
             </div>
             <div>
-              <div className="flex justify-between mb-1">
-                <span className="bench-label">UCT c</span>
-                <span className="font-mono text-[12px] text-[#1A1F1C]">
+              <div className="flex justify-between mb-1.5">
+                <span className="bench-label">Exploration (c)</span>
+                <span className="font-mono text-[12px] font-semibold text-[var(--color-accent)]">
                   {mctsC.toFixed(2)}
                 </span>
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-1.5">
                 {[1.0, 1.414, 2.0].map((val) => (
                   <button
                     key={val}
                     type="button"
                     disabled={isLoading}
                     onClick={() => setMctsC(val)}
-                    className={`flex-1 py-1 font-mono text-[12px] border border-[#CFC9BC] ${
+                    className={`flex-1 py-1 font-mono text-[11.5px] rounded border border-[var(--color-rule)] transition-colors cursor-pointer ${
                       Math.abs(mctsC - val) < 0.01
-                        ? "bg-[#1A1F1C] text-[#F5F5ED] border-[#1A1F1C]"
-                        : "text-[#4A524C]"
+                        ? "bg-[var(--color-accent)] text-[#041A1E] font-bold border-[var(--color-accent)]"
+                        : "text-[var(--color-text-secondary)] hover:bg-[var(--color-accent-soft)]"
                     }`}
                   >
                     {val === 1.414 ? "√2" : val.toFixed(1)}
@@ -184,9 +191,25 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
         )}
       </div>
 
-      <button type="submit" disabled={isLoading || !disease.trim()} className="bench-btn">
-        {isLoading ? "Searching…" : "Run indication search"}
-      </button>
+      <div className="pt-2">
+        <button
+          type="submit"
+          disabled={isLoading || !disease.trim()}
+          className="bench-btn"
+        >
+          {isLoading ? (
+            <>
+              <Sparkles className="w-4 h-4 animate-spin" />
+              <span>Traversing PrimeKG...</span>
+            </>
+          ) : (
+            <>
+              <Search className="w-4 h-4" />
+              <span>Discover Indication Combinations</span>
+            </>
+          )}
+        </button>
+      </div>
     </form>
   );
 };

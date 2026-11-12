@@ -1,49 +1,71 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
-  --font-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --font-serif: "DM Serif Display", Georgia, "Times New Roman", serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 
 @layer base {
   :root {
-    --font-sans: "IBM Plex Sans", system-ui, sans-serif;
-    --font-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --font-serif: "DM Serif Display", Georgia, "Times New Roman", serif;
+    --font-sans: "Inter", system-ui, -apple-system, sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
-    --color-bg: #f5f5ed;
-    --color-sidebar: #e8ede0;
-    --color-surface: #fffef8;
-    --color-panel: #fffef8;
-    --color-rule: #cfc9bc;
-    --color-rule-strong: #a8a294;
+    /* SynThera Midnight Scientific Intelligence Palette (Permanent Dark) */
+    --color-bg: #05090D;
+    --color-bg-secondary: #091218;
+    --color-panel: #101C23;
+    --color-panel-elevated: #14242B;
+    --color-panel-surface: #0E181F;
+    --color-border: #20343C;
+    --color-border-subtle: #16242B;
+    --color-border-active: #2C4A54;
 
-    --color-text-primary: #1a1f1c;
-    --color-text-secondary: #4a524c;
-    --color-text-muted: #6b746c;
+    /* Accents */
+    --color-emerald: #00D6A0;
+    --color-cyan: #35C9D5;
+    --color-mint: #8AE8CC;
+    --color-gold: #C7A76A;
+    --color-antagonism: #E05260;
 
-    --color-ink: #1a1f1c;
-    --color-accent: #1a535c;
-    --color-accent-soft: #d4e5df;
+    /* Typography */
+    --color-text-primary: #F1F5F2;
+    --color-text-secondary: #94A5A6;
+    --color-text-muted: #60747A;
 
-    --color-synergy: #1a535c;
-    --color-additive: #8b7355;
-    --color-antagonism: #a84b4b;
-    --color-literature: #6b5a3a;
+    /* Legacy compatibility mappings */
+    --color-primary: #00D6A0;
+    --color-secondary: #101C23;
+    --color-surface: #101C23;
+    --color-sidebar: #091218;
+    --color-rule: #20343C;
+    --color-rule-strong: #2C4A54;
+    --color-accent: #00D6A0;
+    --color-accent-soft: rgba(0, 214, 160, 0.08);
+    --color-synergy: #00D6A0;
+    --color-additive: #C7A76A;
+
+    --color-scrollbar-thumb: #1A2B33;
+    --color-scrollbar-track: transparent;
   }
 
   body {
     font-family: var(--font-sans);
     font-size: 14px;
     line-height: 1.5;
-    letter-spacing: normal;
-    word-spacing: normal;
     background-color: var(--color-bg);
     color: var(--color-text-primary);
     min-height: 100vh;
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    selection-background-color: rgba(0, 214, 160, 0.25);
+  }
+
+  ::selection {
+    background: rgba(0, 214, 160, 0.25);
+    color: #F1F5F2;
   }
 
   .font-serif {
@@ -60,48 +82,122 @@
   }
 }
 
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--color-scrollbar-track);
 }
 ::-webkit-scrollbar-thumb {
-  background: #cfc9bc;
+  background: var(--color-scrollbar-thumb);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border);
 }
 
-/* ── Shared primitives ── */
+/* ── Typography Scale ── */
+.editorial-title {
+  font-family: var(--font-serif);
+  font-size: clamp(2rem, 3.5vw, 2.75rem);
+  line-height: 1.15;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
 
-.bench-label {
+.editorial-sub {
   font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: normal;
-  text-transform: none;
-  color: var(--color-text-muted);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
 }
 
-.bench-input {
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-emerald);
+}
+
+.metric-number {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* ── Precision Glass & Border Treatments ── */
+.st-panel {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  position: relative;
+  transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.st-panel-elevated {
+  background: var(--color-panel-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.st-panel-glow {
+  box-shadow: 0 0 0 1px var(--color-border), 0 8px 32px -4px rgba(0, 0, 0, 0.5), 0 0 20px -2px rgba(0, 214, 160, 0.08);
+}
+
+.st-input {
   width: 100%;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--color-rule);
-  border-radius: 0;
-  padding: 0.45rem 0;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 13.5px;
   color: var(--color-text-primary);
   outline: none;
-}
-.bench-input:focus {
-  border-bottom-color: var(--color-accent);
-}
-.bench-input:disabled {
-  opacity: 0.5;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.bench-btn {
+.st-input:focus {
+  border-color: var(--color-emerald);
+  box-shadow: 0 0 0 2px rgba(0, 214, 160, 0.15);
+}
+
+.st-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  padding: 0.6rem 1.25rem;
+  background: var(--color-emerald);
+  color: #05090D;
+  border: 1px solid var(--color-emerald);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.st-btn-primary:hover:not(:disabled) {
+  background: #05EDB2;
+  box-shadow: 0 0 16px rgba(0, 214, 160, 0.3);
+  transform: translateY(-1px);
+}
+
+.st-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.st-btn-ghost {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -109,137 +205,47 @@
   font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 500;
-  letter-spacing: normal;
-  text-transform: none;
-  border-radius: 0;
-  padding: 0.55rem 1rem;
-  border: 1px solid var(--color-ink);
-  background: var(--color-ink);
-  color: #f5f5ed;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-.bench-btn:hover:not(:disabled) {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-}
-.bench-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.bench-btn-ghost {
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
   background: transparent;
-  color: var(--color-ink);
-}
-.bench-btn-ghost:hover:not(:disabled) {
-  background: var(--color-ink);
-  color: #f5f5ed;
-}
-
-/* Level-1 container: forms, prediction summary, graph, toxicity, assistant */
-.bench-panel {
-  background: #fffef8;
-  border: 1px solid var(--color-rule);
-  padding: 1rem 1.15rem;
-}
-
-.bench-panel-flush {
-  background: #fffef8;
-  border: 1px solid var(--color-rule);
-}
-
-.bench-section {
-  border-top: 1px solid var(--color-rule);
-  padding-top: 1.35rem;
-  padding-bottom: 1.35rem;
-}
-
-.bench-register {
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--color-text-muted);
-}
-
-.page-kicker {
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-muted);
-  margin-bottom: 0.25rem;
-}
-
-.page-title {
-  font-family: var(--font-serif);
-  font-size: 1.625rem;
-  font-weight: 600;
-  line-height: 1.25;
-  color: var(--color-text-primary);
-}
-
-.page-lede {
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.5;
   color: var(--color-text-secondary);
-  margin-top: 0.4rem;
-  max-width: 38rem;
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: all 0.15s;
 }
 
-.section-title {
-  font-family: var(--font-serif);
-  font-size: 1.2rem;
-  font-weight: 600;
-  line-height: 1.3;
+.st-btn-ghost:hover:not(:disabled) {
+  background: var(--color-panel-elevated);
   color: var(--color-text-primary);
+  border-color: var(--color-border-active);
 }
 
-.meta-text {
-  font-family: var(--font-sans);
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--color-text-muted);
-}
-
-.id-text {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-muted);
-}
-
-.metric-value {
-  font-family: var(--font-mono);
-  font-size: 1.05rem;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-primary);
-}
-
+/* React Flow Canvas Theme Overrides */
 .react-flow__renderer {
-  background-color: #f0eee6 !important;
+  background-color: #05090D !important;
 }
 .react-flow__controls {
-  box-shadow: none !important;
-  border: 1px solid #cfc9bc !important;
-  border-radius: 0 !important;
-  background-color: #f5f5ed !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 8px !important;
+  background-color: var(--color-panel-elevated) !important;
+  overflow: hidden;
 }
 .react-flow__controls-button {
-  background-color: #f5f5ed !important;
-  border-bottom: 1px solid #cfc9bc !important;
-  color: #4a524c !important;
+  background-color: var(--color-panel-elevated) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+  color: var(--color-text-secondary) !important;
 }
 .react-flow__controls-button:hover {
-  background-color: #e8ede0 !important;
-  color: #1a535c !important;
+  background-color: var(--color-border) !important;
+  color: var(--color-emerald) !important;
 }
 .react-flow__handle {
   width: 6px !important;
   height: 6px !important;
-  border-radius: 0 !important;
-  background-color: #1a535c !important;
-  border: 1px solid #f5f5ed !important;
+  border-radius: 2px !important;
+  background-color: var(--color-emerald) !important;
+  border: 1px solid #05090D !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
