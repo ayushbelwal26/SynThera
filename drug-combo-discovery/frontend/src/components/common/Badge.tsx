@@ -20,34 +20,64 @@ export const Badge: React.FC<BadgeProps> = ({
   className = "",
 }) => {
   const sizeClasses = {
-    sm: "text-[11px]",
-    md: "text-[12px]",
-    lg: "text-[13px]",
+    sm: "text-[11px] px-2 py-0.5",
+    md: "text-[12px] px-2.5 py-0.5",
+    lg: "text-[13px] px-3 py-1",
   };
 
-  const colorClasses = {
-    synergy: "text-[#1A535C]",
-    antagonism: "text-[#A84B4B]",
-    additive: "text-[#8B7355]",
-    neutral: "text-[#6B746C]",
-    accent: "text-[#1A535C]",
-    literature: "text-[#6B5A3A]",
-  };
-
-  const dotClasses = {
-    synergy: "bg-[#1A535C]",
-    antagonism: "bg-[#A84B4B]",
-    additive: "bg-[#8B7355]",
-    neutral: "bg-[#6B746C]",
-    accent: "bg-[#1A535C]",
-    literature: "bg-[#6B5A3A]",
-  };
+  const styleMap = {
+    synergy: {
+      color: "var(--color-synergy)",
+      background: "var(--color-accent-soft)",
+      border: "1px solid var(--color-synergy)",
+      glow: "0 0 8px var(--color-accent-glow)",
+    },
+    accent: {
+      color: "var(--color-accent)",
+      background: "var(--color-accent-soft)",
+      border: "1px solid var(--color-accent)",
+      glow: "0 0 8px var(--color-accent-glow)",
+    },
+    additive: {
+      color: "var(--color-additive)",
+      background: "rgba(227, 186, 120, 0.12)",
+      border: "1px solid rgba(227, 186, 120, 0.4)",
+      glow: "none",
+    },
+    antagonism: {
+      color: "var(--color-antagonism)",
+      background: "rgba(255, 92, 103, 0.12)",
+      border: "1px solid rgba(255, 92, 103, 0.4)",
+      glow: "none",
+    },
+    neutral: {
+      color: "var(--color-text-muted)",
+      background: "var(--color-panel)",
+      border: "1px solid var(--color-rule)",
+      glow: "none",
+    },
+    literature: {
+      color: "var(--color-accent)",
+      background: "var(--color-panel)",
+      border: "1px solid var(--color-rule)",
+      glow: "none",
+    },
+  }[variant];
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 font-sans font-medium capitalize ${sizeClasses[size]} ${colorClasses[variant]} ${className}`}
+      className={`inline-flex items-center gap-1.5 font-mono font-medium rounded-full uppercase tracking-wider ${sizeClasses[size]} ${className}`}
+      style={{
+        color: styleMap.color,
+        background: styleMap.background,
+        border: styleMap.border,
+        boxShadow: styleMap.glow,
+      }}
     >
-      <span className={`w-1.5 h-1.5 shrink-0 ${dotClasses[variant]}`} />
+      <span
+        className="w-1.5 h-1.5 rounded-full shrink-0"
+        style={{ background: styleMap.color }}
+      />
       {children}
     </span>
   );

@@ -29,7 +29,7 @@ import type {
   ChatAnalysisResponse,
 } from "../types/api";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://functional-boss-negotiation-tires.trycloudflare.com";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:7860";
 
 class ApiError extends Error {
   statusCode?: number;

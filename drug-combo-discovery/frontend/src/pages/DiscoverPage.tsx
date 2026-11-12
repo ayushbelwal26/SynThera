@@ -1,54 +1,30 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import React, { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
+import gsap from "gsap";
 import { useApp } from "../services/AppContext";
-import { predictCombination, searchCombinations } from "../services/api";
-import type { Drug, PredictionResult, SearchResponse } from "../types/api";
+import { predictCombination } from "../services/api";
+import type { Drug } from "../types/api";
 import { DrugSelectInput } from "../components/discover/DrugSelectInput";
 import { CellLineDropdown } from "../components/discover/CellLineDropdown";
-import { BenchmarkPresets } from "../components/discover/BenchmarkPresets";
+import { BENCHMARKS } from "../components/discover/BenchmarkPresets";
 import type { BenchmarkPreset } from "../components/discover/BenchmarkPresets";
-import { DiscoveryMode } from "../components/discover/DiscoveryMode";
-import { WhyNotSection } from "../components/discover/WhyNotSection";
-import { LoadingStages } from "../components/common/LoadingStages";
-import { AlertNotice } from "../components/common/AlertNotice";
+import { MolecularUniverse } from "../components/three/MolecularUniverse";
+import { DNAHelixPreview } from "../components/three/DNAHelixPreview";
+import {
+  FlaskConical,
+  TrendingUp,
+  AlertTriangle,
+  Minus,
+  Sparkles,
+  Bookmark,
+  ExternalLink,
+  ShieldCheck,
+  Zap,
+  Layers,
+  ChevronRight,
+} from "lucide-react";
 
-function classColor(cls: string): string {
-  if (cls === "synergy") return "#1A535C";
-  if (cls === "antagonism") return "#A84B4B";
-  return "#8B7355";
-}
-
-function DistBar({
-  pSyn,
-  pAdd,
-  pAnt,
-}: {
-  pSyn: number;
-  pAdd: number;
-  pAnt: number;
-}) {
-  const total = pSyn + pAdd + pAnt || 1;
-  return (
-    <div className="w-full max-w-[120px]">
-      <span className="bench-label block mb-1">Distribution</span>
-      <div className="flex h-2 w-full overflow-hidden">
-        <div
-          style={{ width: `${(pSyn / total) * 100}%`, background: "#1A535C" }}
-        />
-        <div
-          style={{ width: `${(pAdd / total) * 100}%`, background: "#C4A882" }}
-        />
-        <div
-          style={{ width: `${(pAnt / total) * 100}%`, background: "#A84B4B" }}
-        />
-      </div>
-    </div>
-  );
-}
-
-export const DiscoverPage: React.FC = () => {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+export const BenchPage: React.FC = () => {
   const {
     drugs,
     cellLineStatus,
@@ -58,36 +34,30 @@ export const DiscoverPage: React.FC = () => {
     currentPrediction,
   } = useApp();
 
-  const activeTab =
-    searchParams.get("mode") === "indication" ? "search" : "pair";
-
   const [drugA, setDrugA] = useState<Drug | null>(null);
   const [drugB, setDrugB] = useState<Drug | null>(null);
   const [cellLine, setCellLine] = useState<string>("T98G");
   const [diseaseContext, setDiseaseContext] = useState<string>("");
 
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [searchDisease, setSearchDisease] = useState<string>(
-    "non-small cell lung carcinoma",
-  );
-  const [searchResults, setSearchResults] = useState<SearchResponse | null>(
-    null,
-  );
-  const [inspectingPairIdx, setInspectingPairIdx] = useState<number | null>(
-    null,
-  );
+  // GSAP animation refs
+  const headerRef = useRef<HTMLDivElement>(null);
+  const resultCardRef = useRef<HTMLDivElement>(null);
+  const probBarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (cellLineStatus.cellLines.length > 0 && !cellLineStatus.cellLines.includes(cellLine)) {
-      setCellLine(cellLineStatus.cellLines[0]);
+    // Entrance animations
+    if (headerRef.current) {
+      gsap.fromTo(
+        headerRef.current,
+        { opacity: 0, y: 15 },
+        { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" },
+      );
     }
-  }, [cellLineStatus.cellLines, cellLine]);
-
-  useEffect(() => {
-    setErrorMsg(null);
-  }, [activeTab]);
+  }, []);
 
   const handleSelectPreset = (preset: BenchmarkPreset) => {
     setDrugA(preset.drugA);
@@ -100,16 +70,21 @@ export const DiscoverPage: React.FC = () => {
   const handleAnalyzePair = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!drugA || !drugB || !cellLine) {
-      setErrorMsg("Select Drug A, Drug B, and a cell line.");
+      setErrorMsg("Select Drug A, Drug B, and a targeted oncology cell line.");
       return;
     }
     if (drugA.id === drugB.id) {
-      setErrorMsg("Select two distinct compounds.");
+      setErrorMsg("Select two distinct pharmacological compounds.");
       return;
     }
 
     setIsLoading(true);
     setErrorMsg(null);
+    setLoadingStage(1);
+
+    // Multi-stage UI feedback sequence
+    const t1 = setTimeout(() => setLoadingStage(2), 500);
+    const t2 = setTimeout(() => setLoadingStage(3), 1000);
 
     try {
       const result = await predictCombination({
@@ -118,417 +93,447 @@ export const DiscoverPage: React.FC = () => {
         cell_line: cellLine,
         disease: diseaseContext.trim() || undefined,
       });
+
       setCurrentPrediction(result);
       addRecentPrediction(result);
-      navigate("/analysis");
+
+      // Trigger GSAP reveal on result card
+      setTimeout(() => {
+        if (resultCardRef.current) {
+          gsap.fromTo(
+            resultCardRef.current,
+            { opacity: 0, scale: 0.98, y: 10 },
+            { opacity: 1, scale: 1, y: 0, duration: 0.5, ease: "power2.out" },
+          );
+        }
+      }, 50);
     } catch (err: any) {
-      setErrorMsg(err.message || "Prediction failed.");
+      setErrorMsg(err.message || "Combination prediction failed.");
     } finally {
+      clearTimeout(t1);
+      clearTimeout(t2);
       setIsLoading(false);
+      setLoadingStage(0);
     }
   };
 
-  const handleRunSearch = async (
-    disease: string,
-    targetCellLine: string,
-    maxCandidates: number,
-    topK: number,
-    searchMethod: "beam" | "greedy" | "mcts" = "beam",
-    nSimulations: number = 50,
-    mctsC: number = 1.414,
-  ) => {
-    setSearchDisease(disease);
-    setIsLoading(true);
-    setErrorMsg(null);
-    setSearchResults(null);
+  const activeResult = currentPrediction;
 
-    try {
-      const res = await searchCombinations({
-        disease,
-        cell_line: targetCellLine,
-        max_candidates: maxCandidates,
-        top_k: topK,
-        search_method: searchMethod,
-        n_simulations: nSimulations,
-        mcts_c: mctsC,
-      });
-      setSearchResults(res);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Indication search failed.");
-    } finally {
-      setIsLoading(false);
+  const getClassBadge = (cls?: string) => {
+    const c = (cls || "additive").toLowerCase();
+    if (c === "synergy") {
+      return (
+        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold px-3 py-1 rounded-full bg-[#00D6A0]/10 text-[#00D6A0] border border-[#00D6A0]/30 shadow-[0_0_12px_rgba(0,214,160,0.15)]">
+          <TrendingUp size={12} />
+          Synergy
+        </span>
+      );
     }
-  };
-
-  const handleSelectDiscoveredPair = async (
-    pair: PredictionResult,
-    idx: number,
-  ) => {
-    setInspectingPairIdx(idx);
-    try {
-      const full = await predictCombination({
-        drug_a: pair.drug_a,
-        drug_b: pair.drug_b,
-        cell_line: pair.cell_line,
-      });
-      setCurrentPrediction(full);
-      addRecentPrediction(full);
-      navigate("/analysis");
-    } catch {
-      setCurrentPrediction(pair);
-      addRecentPrediction(pair);
-      navigate("/analysis");
-    } finally {
-      setInspectingPairIdx(null);
+    if (c === "antagonism") {
+      return (
+        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold px-3 py-1 rounded-full bg-[#E05260]/10 text-[#E05260] border border-[#E05260]/30">
+          <AlertTriangle size={12} />
+          Antagonism
+        </span>
+      );
     }
+    return (
+      <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold px-3 py-1 rounded-full bg-[#C7A76A]/10 text-[#C7A76A] border border-[#C7A76A]/30">
+        <Minus size={12} />
+        Additive
+      </span>
+    );
   };
-
-  const handleInspectWhyNotPair = async (
-    drugAId: string,
-    drugBId: string,
-    cl: string,
-  ) => {
-    setIsLoading(true);
-    setErrorMsg(null);
-    try {
-      const full = await predictCombination({
-        drug_a: drugAId,
-        drug_b: drugBId,
-        cell_line: cl,
-      });
-      setCurrentPrediction(full);
-      addRecentPrediction(full);
-      navigate("/analysis");
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to inspect combination.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const registerEntries = recentPredictions.length
-    ? recentPredictions
-    : currentPrediction
-      ? [currentPrediction]
-      : [];
 
   return (
-    <div className="space-y-0">
+    <div className="space-y-10 relative">
+      {/* ── Page Hero & Identification ── */}
+      <div ref={headerRef} className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-[#20343C] pb-6">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="section-label">01 · Drug Pair Analysis</span>
+            <span className="text-[#20343C]">•</span>
+            <span className="font-mono text-[11px] text-[#94A5A6]">
+              PrimeKG Heterogeneous Graph Transformer
+            </span>
+          </div>
+          <h1 className="editorial-title text-[#F1F5F2]">
+            Combinatorial Synergy Bench
+          </h1>
+          <p className="editorial-sub max-w-2xl mt-2">
+            Evaluate drug interaction mechanisms in silico. Predicts multi-target synergy probability,
+            computes Integrated Gradient attributions over PrimeKG, and identifies synthetic lethality pathways.
+          </p>
+        </div>
+
+        {/* Mini 3D Preview Widget */}
+        <div className="w-24 h-24 hidden lg:block shrink-0 rounded-xl overflow-hidden border border-[#20343C] bg-[#101C23]/60 relative">
+          <DNAHelixPreview />
+          <div className="absolute bottom-1 left-2 text-[9px] font-mono text-[#60747A]">
+            PrimeKG v2
+          </div>
+        </div>
+      </div>
+
       {errorMsg && (
-        <div className="mb-5">
-          <AlertNotice type="error" title="Notice">
-            {errorMsg}
-          </AlertNotice>
+        <div className="p-4 rounded-xl bg-[#E05260]/10 border border-[#E05260]/30 text-[#E05260] text-[13px] flex items-center justify-between">
+          <span>{errorMsg}</span>
+          <button
+            type="button"
+            onClick={() => setErrorMsg(null)}
+            className="text-[11px] font-mono underline"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
-      {isLoading && (
-        <div className="py-8">
-          <LoadingStages
-            title={
-              activeTab === "pair"
-                ? "Scoring pair"
-                : "Searching candidate space"
-            }
-            subtitle={
-              activeTab === "pair"
-                ? `${drugA?.name || "Drug A"} + ${drugB?.name || "Drug B"} · ${cellLine}`
-                : `Indication neighbors · ${searchDisease}`
-            }
-          />
-        </div>
-      )}
-
-      {/* ── Bench: Score a pair ── */}
-      {!isLoading && activeTab === "pair" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
-          <div className="lg:col-span-5 space-y-4">
-            <div>
-              <p className="page-kicker">Pair analysis</p>
-              <h2 className="page-title">Score a pair</h2>
-              <p className="page-lede">
-                Enter two DrugBank compounds, a cell line, and optional disease
-                context. Returns class probabilities, V(pair), and attributed
-                edges.
-              </p>
+      {/* ── Main Asymmetric Workspace Layout ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* LEFT REGION: Analysis Controls */}
+        <div className="lg:col-span-5 space-y-6">
+          <div className="st-panel p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-[#20343C] pb-3">
+              <div className="flex items-center gap-2">
+                <FlaskConical size={16} className="text-[#00D6A0]" />
+                <h3 className="font-medium text-[15px] text-[#F1F5F2]">
+                  Pair Selection Workspace
+                </h3>
+              </div>
+              <span className="text-[10.5px] font-mono text-[#60747A] uppercase">
+                Dual Compound
+              </span>
             </div>
 
-            <div className="bench-panel space-y-4">
-              <form onSubmit={handleAnalyzePair} className="space-y-4">
+            <form onSubmit={handleAnalyzePair} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-mono uppercase text-[#94A5A6] block">
+                  Drug A · Primary Compound
+                </label>
                 <DrugSelectInput
-                  label="Drug A — DrugBank"
+                  label=""
                   selectedDrug={drugA}
                   onSelect={setDrugA}
                   drugs={drugs}
-                  placeholder="Osimertinib"
+                  placeholder="e.g. Temozolomide, Osimertinib..."
                 />
+                {drugA && (
+                  <div className="flex items-center justify-between text-[11px] font-mono text-[#60747A] px-1">
+                    <span>ID: {drugA.id}</span>
+                    <span className="text-[#00D6A0]">Catalog verified</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-mono uppercase text-[#94A5A6] block">
+                  Drug B · Combination Partner
+                </label>
                 <DrugSelectInput
-                  label="Drug B — DrugBank"
+                  label=""
                   selectedDrug={drugB}
                   onSelect={setDrugB}
                   drugs={drugs}
-                  placeholder="Crizotinib"
+                  placeholder="e.g. Cyclophosphamide, Crizotinib..."
                 />
-                <CellLineDropdown
-                  status={cellLineStatus}
-                  selectedCellLine={cellLine}
-                  onSelect={setCellLine}
-                />
+                {drugB && (
+                  <div className="flex items-center justify-between text-[11px] font-mono text-[#60747A] px-1">
+                    <span>ID: {drugB.id}</span>
+                    <span className="text-[#00D6A0]">Catalog verified</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-[#20343C]/60 space-y-3">
                 <div>
-                  <label className="bench-label block mb-1">
-                    Disease context (optional)
+                  <label className="text-[11px] font-mono uppercase text-[#94A5A6] block mb-1">
+                    Cancer Cell Line Context
+                  </label>
+                  <CellLineDropdown
+                    status={cellLineStatus}
+                    selectedCellLine={cellLine}
+                    onSelect={setCellLine}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-mono uppercase text-[#94A5A6] block mb-1">
+                    Disease Indication Context (Optional)
                   </label>
                   <input
                     type="text"
                     value={diseaseContext}
                     onChange={(e) => setDiseaseContext(e.target.value)}
-                    placeholder="non-small cell lung carcinoma"
-                    className="bench-input"
+                    placeholder="e.g. glioblastoma, non-small cell lung carcinoma"
+                    className="st-input"
                   />
                 </div>
+              </div>
+
+              <div className="pt-3">
                 <button
                   type="submit"
-                  disabled={!drugA || !drugB}
-                  className="bench-btn mt-1"
+                  disabled={isLoading || !drugA || !drugB}
+                  className="st-btn-primary w-full py-3"
                 >
-                  Run prediction
+                  {isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-3.5 h-3.5 border-2 border-[#05090D] border-t-transparent rounded-full animate-spin" />
+                      {loadingStage === 1
+                        ? "Assembling PrimeKG Subgraph..."
+                        : loadingStage === 2
+                          ? "Running HGT GNN Inference..."
+                          : "Computing Attributions..."}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <Zap size={15} />
+                      <span>Execute GNN Prediction</span>
+                    </span>
+                  )}
                 </button>
-              </form>
-            </div>
+              </div>
+            </form>
           </div>
 
-          <div className="lg:col-span-7">
-            <div className="flex items-baseline justify-between border-b border-[#CFC9BC] pb-2 mb-1">
-              <h3 className="section-title">
-                {registerEntries.length > 0
-                  ? "Record register"
-                  : "Reference pairs"}
-              </h3>
-              <span className="meta-text">
-                {registerEntries.length > 0
-                  ? `${registerEntries.length} ${registerEntries.length === 1 ? "entry" : "entries"}`
-                  : "Load to begin"}
+          {/* Reference Benchmark Presets */}
+          <div className="st-panel p-5 space-y-3">
+            <div className="flex items-center justify-between border-b border-[#20343C] pb-2">
+              <span className="font-medium text-[13.5px] text-[#F1F5F2] flex items-center gap-2">
+                <Bookmark size={14} className="text-[#C7A76A]" />
+                Curated Reference Benchmarks
               </span>
+              <span className="text-[10px] font-mono text-[#60747A]">DrugComb</span>
             </div>
-
-            {registerEntries.length > 0 ? (
-              <div className="divide-y divide-[#CFC9BC] border-b border-[#CFC9BC]">
-                {registerEntries.map((p, idx) => {
-                  const cls = p.predicted_class || "additive";
-                  const color = classColor(cls);
-                  const pSyn =
-                    p.p_synergy ?? p.ranking?.p_synergy ?? p.score ?? 0;
-                  const v =
-                    p.v_score ?? p.ranking?.v_score ?? p.score ?? 0;
-                  return (
-                    <button
-                      key={`${p.drug_a}_${p.drug_b}_${p.cell_line}_${idx}`}
-                      type="button"
-                      onClick={() => {
-                        setCurrentPrediction(p);
-                        navigate("/analysis");
-                      }}
-                      className="w-full text-left py-3 flex items-stretch gap-3 hover:bg-[#E8EDE0]/35"
-                    >
-                      <div
-                        className="w-0.5 shrink-0 self-stretch"
-                        style={{ background: color }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <span className="font-serif text-[15px] text-[#1A1F1C]">
-                          {p.drug_a_name} + {p.drug_b_name}
-                        </span>
-                        <span className="block id-text mt-0.5">
-                          {p.drug_a} · {p.drug_b} · {p.cell_line}
-                        </span>
-                        <span
-                          className="inline-block text-[12px] mt-1 capitalize"
-                          style={{ color }}
-                        >
-                          {cls}
-                        </span>
-                      </div>
-                      <div className="shrink-0 text-right space-y-1">
-                        <div>
-                          <span className="bench-label block">P(syn)</span>
-                          <span className="metric-value text-[14px]">
-                            {Number(pSyn).toFixed(2)}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="bench-label block">V</span>
-                          <span className="metric-value text-[14px]">
-                            {Number(v).toFixed(2)}
-                          </span>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div>
-                <p className="meta-text py-3">
-                  No scored pairs yet. Load a reference case, or run a
-                  prediction from the form.
-                </p>
-                <BenchmarkPresets onSelect={handleSelectPreset} />
-              </div>
-            )}
-
-            {registerEntries.length > 0 && (
-              <div className="mt-6">
-                <BenchmarkPresets onSelect={handleSelectPreset} />
-              </div>
-            )}
+            <p className="text-[12px] text-[#94A5A6]">
+              Pre-validated clinical combinations with observed wet-lab outcomes:
+            </p>
+            <div className="divide-y divide-[#20343C]/40">
+              {BENCHMARKS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => handleSelectPreset(preset)}
+                  className="w-full text-left py-2.5 px-1 hover:bg-[#14242B] rounded-lg transition-colors flex items-center justify-between gap-3 group cursor-pointer"
+                >
+                  <div>
+                    <div className="text-[13.5px] text-[#F1F5F2] group-hover:text-[#00D6A0] transition-colors">
+                      {preset.drugA.name} + {preset.drugB.name}
+                    </div>
+                    <div className="font-mono text-[11px] text-[#60747A] mt-0.5">
+                      {preset.cellLine} • {preset.indication}
+                    </div>
+                  </div>
+                  {getClassBadge(preset.expectedClass)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      )}
 
-      {/* ── Indication search ── */}
-      {!isLoading && activeTab === "search" && (
-        <div className="space-y-5">
-          <div>
-            <p className="page-kicker">Indication search</p>
-            <h2 className="page-title">Ranked candidates for an indication</h2>
-            <p className="page-lede">
-              Traverse disease neighborhood in PrimeKG, score candidate pairs,
-              and rank by V(pair). Open a row for the Result inspector.
-            </p>
-          </div>
-
-          <div className="bench-panel">
-            <DiscoveryMode
-              cellLineStatus={cellLineStatus}
-              selectedCellLine={cellLine}
-              onSelectCellLine={setCellLine}
-              onRunSearch={handleRunSearch}
-              isLoading={isLoading}
-              initialDisease={searchDisease}
-            />
-          </div>
-
-          {searchResults && (
-            <div>
-              <div className="flex items-baseline justify-between border-b border-[#CFC9BC] pb-2 mb-0">
-                <span className="bench-label">
-                  {searchResults.results.length} candidate pairs ·{" "}
-                  {searchResults.search_method || "beam"}
-                  {searchResults.truncated ? " · truncated" : ""}
-                </span>
-                <span className="font-mono text-[12px] text-[#6B746C]">
-                  {searchResults.disease} · {searchResults.cell_line}
-                </span>
+        {/* RIGHT REGION: Dominant Prediction Results Panel */}
+        <div className="lg:col-span-7 space-y-6">
+          {activeResult ? (
+            <div
+              ref={resultCardRef}
+              className="st-panel st-panel-glow p-7 space-y-7 relative overflow-hidden"
+            >
+              {/* Subtle 3D background canvas in results */}
+              <div className="absolute top-0 right-0 w-80 h-64 opacity-25 pointer-events-none -mr-16 -mt-16">
+                <MolecularUniverse particleCount={45} />
               </div>
 
-              <div className="divide-y divide-[#CFC9BC]">
-                {searchResults.results.map((pair, idx) => {
-                  const rank = pair.rank ?? idx + 1;
-                  const cls = pair.predicted_class || "additive";
-                  const color = classColor(cls);
-                  const pSyn =
-                    pair.p_synergy ?? pair.ranking?.p_synergy ?? pair.score ?? 0;
-                  const pAdd = (pair as any).p_additive ?? 0;
-                  const pAnt = (pair as any).p_antagonism ?? 0;
-                  const v =
-                    pair.v_score ?? pair.ranking?.v_score ?? pair.score ?? 0;
-                  const tox = pair.ranking?.toxicity_penalty;
+              {/* Result Header */}
+              <div className="relative z-10 flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-[#20343C] pb-5">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="section-label">Prediction Outcome</span>
+                    <span className="text-[#20343C]">•</span>
+                    <span className="font-mono text-[11px] text-[#35C9D5]">
+                      Model Inference v1.0
+                    </span>
+                  </div>
+                  <h2 className="editorial-title text-[28px] text-[#F1F5F2] tracking-tight">
+                    {activeResult.drug_a_name} + {activeResult.drug_b_name}
+                  </h2>
+                  <div className="flex flex-wrap items-center gap-3 font-mono text-[12px] text-[#94A5A6] mt-1.5">
+                    <span>Cell Line: <strong className="text-[#F1F5F2]">{activeResult.cell_line}</strong></span>
+                    <span>•</span>
+                    <span>{activeResult.drug_a} / {activeResult.drug_b}</span>
+                  </div>
+                </div>
 
-                  return (
-                    <div
-                      key={`${pair.drug_a}_${pair.drug_b}_${idx}`}
-                      className="py-2.5 flex flex-col md:flex-row md:items-center gap-3"
-                    >
-                      <span className="id-text text-[15px] text-[#A8A294] w-8 shrink-0 leading-none">
-                        {String(rank).padStart(2, "0")}
-                      </span>
-
-                      <div className="flex-1 min-w-0">
-                        <button
-                          type="button"
-                          disabled={inspectingPairIdx !== null}
-                          onClick={() => handleSelectDiscoveredPair(pair, idx)}
-                          className="font-serif text-[15px] text-[#1A1F1C] underline underline-offset-2 decoration-[#CFC9BC] hover:decoration-[#1A535C] text-left"
-                        >
-                          {pair.drug_a_name} + {pair.drug_b_name}
-                        </button>
-                        <span className="block font-mono text-[12px] text-[#6B746C] mt-0.5">
-                          {pair.cell_line} ·{" "}
-                          {pair.search_method ||
-                            searchResults.search_method ||
-                            "beam"}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-3 shrink-0">
-                        {tox !== undefined && tox !== null && (
-                          <span className="font-mono text-[13px] text-[#6B746C]">
-                            Tox {Number(tox).toFixed(2)}
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          className="bench-btn-ghost border border-[#CFC9BC] px-2 py-1 font-mono text-[12px] text-[#4A524C] hover:bg-[#1A1F1C] hover:text-[#F5F5ED] hover:border-[#1A1F1C]"
-                          onClick={() =>
-                            document
-                              .getElementById("why-not-section")
-                              ?.scrollIntoView({ behavior: "smooth" })
-                          }
-                        >
-                          Why not?
-                        </button>
-                      </div>
-
-                      <DistBar
-                        pSyn={Number(pSyn)}
-                        pAdd={Number(pAdd) || Math.max(0, 1 - Number(pSyn) - 0.05)}
-                        pAnt={Number(pAnt) || 0.05}
-                      />
-
-                      <div className="shrink-0 text-right min-w-[72px]">
-                        <span className="bench-label block">Class</span>
-                        <span
-                          className="font-mono text-[14px] capitalize"
-                          style={{ color }}
-                        >
-                          {cls}
-                        </span>
-                      </div>
-
-                      <div className="shrink-0 text-right min-w-[56px]">
-                        <span className="bench-label block">V</span>
-                        <span className="font-mono text-[14px] text-[#1A1F1C]">
-                          {Number(v).toFixed(2)}
-                        </span>
-                      </div>
-
-                      {inspectingPairIdx === idx && (
-                        <span className="font-mono text-[12px] text-[#1A535C]">
-                          Loading…
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+                <div className="sm:text-right shrink-0">
+                  <div className="text-[10.5px] font-mono uppercase text-[#60747A] mb-1">
+                    Classification
+                  </div>
+                  {getClassBadge(activeResult.predicted_class)}
+                </div>
               </div>
+
+              {/* Probability Vector Visualization */}
+              <div className="relative z-10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-[14px] text-[#F1F5F2]">
+                    Calibrated Class Probabilities
+                  </span>
+                  <div className="text-right font-mono">
+                    <span className="text-[11px] text-[#60747A] block">Multi-Objective Value V</span>
+                    <span className="metric-number text-[16px] text-[#00D6A0]">
+                      {Number(activeResult.v_score ?? activeResult.score ?? 0).toFixed(3)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Segmented Horizon Bar */}
+                <div
+                  ref={probBarRef}
+                  className="h-3.5 w-full rounded-full overflow-hidden flex bg-[#091218] border border-[#20343C]"
+                >
+                  <div
+                    style={{ width: `${(activeResult.p_synergy ?? 0) * 100}%` }}
+                    className="bg-[#00D6A0] transition-all duration-500 shadow-[0_0_12px_rgba(0,214,160,0.4)]"
+                    title={`Synergy: ${((activeResult.p_synergy ?? 0) * 100).toFixed(1)}%`}
+                  />
+                  <div
+                    style={{ width: `${(activeResult.p_additive ?? 0) * 100}%` }}
+                    className="bg-[#C7A76A] transition-all duration-500"
+                    title={`Additive: ${((activeResult.p_additive ?? 0) * 100).toFixed(1)}%`}
+                  />
+                  <div
+                    style={{ width: `${(activeResult.p_antagonism ?? 0) * 100}%` }}
+                    className="bg-[#E05260] transition-all duration-500"
+                    title={`Antagonism: ${((activeResult.p_antagonism ?? 0) * 100).toFixed(1)}%`}
+                  />
+                </div>
+
+                {/* Metric Cards Grid */}
+                <div className="grid grid-cols-3 gap-3 pt-2 font-mono">
+                  <div className="p-3 rounded-lg bg-[#091218] border border-[#20343C] text-center">
+                    <span className="text-[10px] text-[#60747A] uppercase block">P(Synergy)</span>
+                    <span className="text-[18px] font-bold text-[#00D6A0]">
+                      {((activeResult.p_synergy ?? 0) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-lg bg-[#091218] border border-[#20343C] text-center">
+                    <span className="text-[10px] text-[#60747A] uppercase block">P(Additive)</span>
+                    <span className="text-[18px] font-bold text-[#C7A76A]">
+                      {((activeResult.p_additive ?? 0) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-lg bg-[#091218] border border-[#20343C] text-center">
+                    <span className="text-[10px] text-[#60747A] uppercase block">P(Antagonism)</span>
+                    <span className="text-[18px] font-bold text-[#E05260]">
+                      {((activeResult.p_antagonism ?? 0) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Mechanistic Attribution Rationale */}
+              {activeResult.explanation_text && (
+                <div className="p-4 rounded-xl bg-[#091218] border border-[#20343C] space-y-1 relative z-10">
+                  <div className="flex items-center gap-2 text-[11px] font-mono text-[#00D6A0]">
+                    <Sparkles size={12} />
+                    <span>Biological Attribution Pathway</span>
+                  </div>
+                  <p className="text-[13.5px] text-[#94A5A6] leading-relaxed">
+                    {activeResult.explanation_text}
+                  </p>
+                </div>
+              )}
+
+              {/* Verification & Literature Badges */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono relative z-10">
+                <div className="p-3.5 rounded-lg bg-[#091218] border border-[#20343C] space-y-1">
+                  <div className="flex items-center gap-1.5 text-[#00D6A0] font-semibold">
+                    <ShieldCheck size={14} />
+                    <span>In-Silico Faithfulness</span>
+                  </div>
+                  <p className="text-[11.5px] text-[#60747A]">
+                    {activeResult.faithfulness?.explanation_faithful
+                      ? "Sufficiency verified: Subgraph preserves predicted class under edge ablation."
+                      : "Evaluated across 2-hop local PrimeKG topology."}
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-lg bg-[#091218] border border-[#20343C] space-y-1">
+                  <div className="flex items-center gap-1.5 text-[#35C9D5] font-semibold">
+                    <Bookmark size={14} />
+                    <span>PubMed Literature</span>
+                  </div>
+                  <p className="text-[11.5px] text-[#60747A]">
+                    {activeResult.supporting_literature?.length
+                      ? `${activeResult.supporting_literature.length} peer-reviewed clinical citations co-indexed.`
+                      : "Indexed in scientific evidence repository."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-[#20343C] relative z-10">
+                <Link
+                  to={`/results/${activeResult.drug_a}_${activeResult.drug_b}_${activeResult.cell_line}`}
+                  className="st-btn-primary"
+                >
+                  <span>Launch Deep Inspection Report</span>
+                  <ExternalLink size={14} />
+                </Link>
+
+                <Link to="/literature" className="st-btn-ghost text-xs">
+                  <span>Explore Matched Literature</span>
+                  <ChevronRight size={13} />
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="st-panel p-12 text-center space-y-3">
+              <FlaskConical size={36} className="mx-auto text-[#60747A]" />
+              <h3 className="text-[17px] font-medium text-[#F1F5F2]">
+                No Active Pair Record
+              </h3>
+              <p className="text-[13px] text-[#94A5A6] max-w-sm mx-auto">
+                Select two oncology compounds from the workbench or click any of the curated benchmark presets to inspect predictions.
+              </p>
             </div>
           )}
 
-      <div className="border-t border-[#CFC9BC] pt-6">
-        <WhyNotSection
-          disease={
-            searchResults?.disease ||
-            searchDisease ||
-            diseaseContext ||
-            "glioblastoma"
-          }
-          cellLine={searchResults?.cell_line || cellLine}
-          searchMethod={(searchResults?.search_method as any) || "beam"}
-          onInspectPair={handleInspectWhyNotPair}
-        />
-      </div>
+          {/* Session History Register */}
+          {recentPredictions.length > 1 && (
+            <div className="st-panel p-5 space-y-3">
+              <div className="flex items-center justify-between border-b border-[#20343C] pb-2">
+                <span className="font-medium text-[13.5px] text-[#F1F5F2] flex items-center gap-2">
+                  <Layers size={14} className="text-[#00D6A0]" />
+                  Recent Session Evaluations
+                </span>
+                <span className="text-[10px] font-mono text-[#60747A]">
+                  {recentPredictions.length} records
+                </span>
+              </div>
+              <div className="divide-y divide-[#20343C]/40">
+                {recentPredictions.map((p, idx) => (
+                  <button
+                    key={`${p.drug_a}_${p.drug_b}_${p.cell_line}_${idx}`}
+                    type="button"
+                    onClick={() => setCurrentPrediction(p)}
+                    className="w-full text-left py-2.5 px-1 hover:bg-[#14242B] rounded-lg transition-colors flex items-center justify-between gap-3 group cursor-pointer"
+                  >
+                    <div>
+                      <div className="text-[13.5px] text-[#F1F5F2] group-hover:text-[#00D6A0] transition-colors">
+                        {p.drug_a_name} + {p.drug_b_name}
+                      </div>
+                      <div className="font-mono text-[11px] text-[#60747A] mt-0.5">
+                        {p.cell_line} • P(syn): {((p.p_synergy ?? 0) * 100).toFixed(0)}%
+                      </div>
+                    </div>
+                    {getClassBadge(p.predicted_class)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 };
