@@ -1,0 +1,7 @@
+{
+  "name": "synthera-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "cd drug-combo-discovery/frontend && npm install && npm run build"
+  }
+}

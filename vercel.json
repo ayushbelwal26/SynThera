@@ -1,0 +1,11 @@
+{
+  "buildCommand": "cd drug-combo-discovery/frontend && npm install && npm run build",
+  "outputDirectory": "drug-combo-discovery/frontend/dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
