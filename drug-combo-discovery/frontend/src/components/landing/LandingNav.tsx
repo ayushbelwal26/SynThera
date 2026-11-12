@@ -31,17 +31,14 @@ export const LandingNav: React.FC = () => {
       }`}
     >
       <div className="w-full max-w-7xl mx-auto flex items-center justify-between">
-        {/* Brand Monogram */}
-        <Link to="/" className="flex items-center gap-2.5 group">
-          <div className="w-8 h-8 rounded-lg bg-[#101C23] border border-[#00D6A0]/40 flex items-center justify-center font-serif text-[17px] font-bold text-[#F1F5F2] group-hover:border-[#00D6A0] transition-colors shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-[#00D6A0] inline-block mr-0.5 animate-pulse" />
-            ST
-          </div>
+        {/* Brand Header */}
+        <Link to="/" className="flex items-center gap-3 group">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#00D6A0] shadow-[0_0_12px_#00D6A0] animate-pulse" />
           <div className="flex flex-col">
-            <span className="font-serif text-[20px] font-bold tracking-tight text-[#F1F5F2] leading-none">
+            <span className="font-serif text-[20px] font-bold tracking-tight text-[#F1F5F2] leading-none group-hover:text-[#00D6A0] transition-colors">
               SynThera
             </span>
-            <span className="text-[9.5px] font-mono uppercase tracking-widest text-[#60747A] mt-0.5">
+            <span className="text-[9.5px] font-mono uppercase tracking-widest text-[#60747A] mt-1">
               Computational Oncology
             </span>
           </div>

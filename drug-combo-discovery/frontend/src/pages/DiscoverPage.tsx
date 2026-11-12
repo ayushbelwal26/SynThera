@@ -9,7 +9,6 @@ import { CellLineDropdown } from "../components/discover/CellLineDropdown";
 import { BENCHMARKS } from "../components/discover/BenchmarkPresets";
 import type { BenchmarkPreset } from "../components/discover/BenchmarkPresets";
 import { MolecularUniverse } from "../components/three/MolecularUniverse";
-import { DNAHelixPreview } from "../components/three/DNAHelixPreview";
 import {
   FlaskConical,
   TrendingUp,
@@ -181,14 +180,6 @@ export const BenchPage: React.FC = () => {
             Evaluate drug interaction mechanisms in silico. Predicts multi-target synergy probability,
             computes Integrated Gradient attributions over PrimeKG, and identifies synthetic lethality pathways.
           </p>
-        </div>
-
-        {/* Mini 3D Preview Widget */}
-        <div className="w-24 h-24 hidden lg:block shrink-0 rounded-xl overflow-hidden border border-[#20343C] bg-[#101C23]/60 relative">
-          <DNAHelixPreview />
-          <div className="absolute bottom-1 left-2 text-[9px] font-mono text-[#60747A]">
-            PrimeKG v2
-          </div>
         </div>
       </div>
 

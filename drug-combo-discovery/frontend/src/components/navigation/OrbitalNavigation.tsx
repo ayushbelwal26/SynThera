@@ -48,15 +48,16 @@ export const OrbitalNavigation: React.FC<OrbitalNavProps> = ({
 
   return (
     <div className="flex items-center gap-2 bg-[#091218]/90 backdrop-blur-md border border-[#20343C] p-1.5 rounded-full shadow-2xl">
-      {/* Brand Monogram Motif */}
-      <div className="flex items-center gap-2 pl-3 pr-2 border-r border-[#20343C]">
-        <div className="relative flex items-center justify-center w-6 h-6 rounded-full bg-[#101C23] border border-[#00D6A0]/40">
-          <span className="w-2 h-2 rounded-full bg-[#00D6A0] animate-pulse" />
-        </div>
-        <span className="font-serif text-[15px] font-bold text-[#F1F5F2] tracking-tight">
+      {/* Brand Header */}
+      <NavLink
+        to="/"
+        className="flex items-center gap-2.5 pl-3 pr-2.5 border-r border-[#20343C] group hover:opacity-90 transition-opacity"
+      >
+        <span className="w-2 h-2 rounded-full bg-[#00D6A0] shadow-[0_0_8px_#00D6A0] animate-pulse" />
+        <span className="font-serif text-[15px] font-bold text-[#F1F5F2] tracking-tight group-hover:text-[#00D6A0] transition-colors">
           SynThera
         </span>
-      </div>
+      </NavLink>
 
       {/* Primary 4 Orbital Destinations */}
       <nav className="flex items-center gap-1" aria-label="Orbital Navigation">
