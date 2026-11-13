@@ -29,6 +29,9 @@ import type {
   ChatAnalysisResponse,
 } from "../types/api";
 
+export const CLOUD_BACKEND_FALLBACK =
+  "https://monsters-hearing-assure-librarian.trycloudflare.com";
+
 export function getApiBase(): string {
   // 1. Build-time environment variable (configured in Vercel project settings)
   if (import.meta.env.VITE_API_BASE_URL) {
@@ -51,13 +54,29 @@ export function getApiBase(): string {
     }
   }
 
-  // 3. Relative proxy when on HTTPS without env configured
-  if (typeof window !== "undefined" && window.location.protocol === "https:") {
-    return "/api";
+  // 3. Local development loopback
+  if (
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1")
+  ) {
+    return "http://127.0.0.1:7860";
   }
 
-  // 4. Default local development backend
+  // 4. Remote HTTPS deployment (e.g. Vercel, Netlify) -> live Cloudflare tunnel
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    return CLOUD_BACKEND_FALLBACK;
+  }
+
+  // 5. Default local development backend
   return "http://127.0.0.1:7860";
+}
+
+export function setCustomApiBase(url: string): void {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("SYNTHERA_API_URL", url.replace(/\/+$/, ""));
+    window.location.reload();
+  }
 }
 
 export const API_BASE = getApiBase();
