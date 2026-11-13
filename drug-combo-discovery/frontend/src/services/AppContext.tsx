@@ -22,11 +22,28 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [drugs, setDrugs] = useState<Drug[]>([]);
+  const [drugs, setDrugs] = useState<Drug[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = sessionStorage.getItem("SYNTHERA_CACHED_DRUGS");
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return [];
+  });
+
   const [cellLineStatus, setCellLineStatus] = useState<CellLineRelevanceStatus>(
-    {
-      cellLines: [],
-      isFiltered: false,
+    () => {
+      if (typeof window !== "undefined") {
+        try {
+          const cached = sessionStorage.getItem("SYNTHERA_CACHED_CELL_LINES");
+          if (cached) return JSON.parse(cached);
+        } catch {}
+      }
+      return {
+        cellLines: [],
+        isFiltered: false,
+      };
     },
   );
 
@@ -37,7 +54,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     PredictionResult[]
   >([]);
 
-  const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(() => drugs.length === 0);
 
   useEffect(() => {
     let isMounted = true;
@@ -47,6 +64,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
           setDrugs(drugList);
           setCellLineStatus(cellLinesRes);
           setIsLoadingCatalog(false);
+          try {
+            sessionStorage.setItem(
+              "SYNTHERA_CACHED_DRUGS",
+              JSON.stringify(drugList),
+            );
+            sessionStorage.setItem(
+              "SYNTHERA_CACHED_CELL_LINES",
+              JSON.stringify(cellLinesRes),
+            );
+          } catch {}
         }
       })
       .catch((err) => {

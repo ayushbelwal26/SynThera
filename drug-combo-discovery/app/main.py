@@ -36,6 +36,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 
 # Ensure project root and src/ are in Python path
@@ -179,6 +180,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Enable GZip compression for payloads > 1KB (compresses 428KB /drugs down to ~65KB)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 # ---------------------------------------------------------------------------
