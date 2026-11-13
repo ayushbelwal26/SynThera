@@ -30,7 +30,7 @@ import type {
 } from "../types/api";
 
 export const CLOUD_BACKEND_FALLBACK =
-  "https://monsters-hearing-assure-librarian.trycloudflare.com";
+  "https://passive-employ-guidance-fountain.trycloudflare.com";
 
 export function getApiBase(): string {
   if (typeof window !== "undefined") {

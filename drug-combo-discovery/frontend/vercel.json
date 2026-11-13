@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://monsters-hearing-assure-librarian.trycloudflare.com/:path*"
+      "destination": "https://passive-employ-guidance-fountain.trycloudflare.com/:path*"
     },
     {
       "source": "/(.*)",
