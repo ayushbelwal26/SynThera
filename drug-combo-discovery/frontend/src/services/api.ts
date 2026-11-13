@@ -33,13 +33,11 @@ export const CLOUD_BACKEND_FALLBACK =
   "https://monsters-hearing-assure-librarian.trycloudflare.com";
 
 export function getApiBase(): string {
-  // 1. Build-time environment variable (configured in Vercel project settings)
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return (import.meta.env.VITE_API_BASE_URL as string).replace(/\/+$/, "");
-  }
-
-  // 2. Runtime override via query parameter (?api=...) or localStorage
   if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    const isLocal = host === "localhost" || host === "127.0.0.1";
+
+    // 1. Runtime override via query parameter (?api=...) or localStorage
     try {
       const params = new URLSearchParams(window.location.search);
       const queryApi = params.get("api");
@@ -52,23 +50,28 @@ export function getApiBase(): string {
     } catch {
       // ignore security / storage restrictions
     }
+
+    // 2. If the user or someone else is visiting from a remote domain (trycloudflare.com, vercel.app, etc.):
+    // NEVER point to localhost because that would point to the remote visitor's own machine!
+    if (!isLocal) {
+      const envUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
+      if (
+        envUrl &&
+        !envUrl.includes("localhost") &&
+        !envUrl.includes("127.0.0.1")
+      ) {
+        return envUrl.replace(/\/+$/, "");
+      }
+      return CLOUD_BACKEND_FALLBACK;
+    }
   }
 
-  // 3. Local development loopback
-  if (
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" ||
-      window.location.hostname === "127.0.0.1")
-  ) {
-    return "http://127.0.0.1:7860";
+  // 3. For local machine development (localhost / 127.0.0.1)
+  const envUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, "");
   }
 
-  // 4. Remote HTTPS deployment (e.g. Vercel, Netlify) -> live Cloudflare tunnel
-  if (typeof window !== "undefined" && window.location.protocol === "https:") {
-    return CLOUD_BACKEND_FALLBACK;
-  }
-
-  // 5. Default local development backend
   return "http://127.0.0.1:7860";
 }
 
