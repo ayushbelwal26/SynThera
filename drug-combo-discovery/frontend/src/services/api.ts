@@ -30,7 +30,7 @@ import type {
 } from "../types/api";
 
 export const CLOUD_BACKEND_FALLBACK =
-  "https://passive-employ-guidance-fountain.trycloudflare.com";
+  "https://grey-worlds-proof-receiving.trycloudflare.com";
 
 export function getApiBase(): string {
   if (typeof window !== "undefined") {
